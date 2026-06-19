@@ -1,0 +1,9 @@
+.env
+node_modules/
+npm-debug.log*
+server.out.log
+server.err.log
+config/*.local.php
+cron/logs/
+public/uploads/
+database/private_snapshot.sql

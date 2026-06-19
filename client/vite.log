@@ -1,0 +1,9 @@
+
+  [32m[1mVITE[22m v5.4.21[39m  [2mready in [0m[1m1001[22m[2m[0m ms[22m
+
+  [32m➜[39m  [1mLocal[22m:   [36mhttp://localhost:[1m5173[22m/[39m
+[2m  [32m➜[39m  [1mNetwork[22m[2m: use [22m[1m--host[22m[2m to expose[22m
+[2m10:54:09 am[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/features/pipeline/PipelinePage.jsx, /src/features/campaigns/CampaignForm.jsx, /src/features/settings/GeneralSettings.jsx, /src/context/AuthContext.jsx, /src/features/leads/LeadsPage.jsx, /src/features/auth/ResetPage.jsx, /src/features/settings/PipelineSettings.jsx, /src/features/settings/UsersSettings.jsx, /src/features/auth/ForgotPage.jsx, /src/features/campaigns/WorkflowBuilder.jsx, /src/features/pipeline/DealDetail.jsx, /src/features/templates/TemplateForm.jsx, /src/features/campaigns/CampaignsPage.jsx, /src/features/settings/IntegrationsSettings.jsx, /src/features/leads/LeadDetail.jsx, /src/features/pipeline/DealForm.jsx, /src/features/templates/TemplatesPage.jsx, /src/features/leads/LeadForm.jsx, /src/features/tasks/TasksPage.jsx, /src/features/dashboard/DashboardPage.jsx, /src/features/reports/ReportsPage.jsx, /src/features/settings/SourcesSettings.jsx[22m
+[2m10:54:10 am[22m [36m[1m[vite][22m[39m [33mhmr invalidate [39m[2m/src/context/AuthContext.jsx[22m Could not Fast Refresh ("AuthContext" export is incompatible). Learn more at https://github.com/vitejs/vite-plugin-react/tree/main/packages/plugin-react#consistent-components-exports
+[2m10:54:10 am[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/App.jsx, /src/features/auth/LoginPage.jsx, /src/components/layout/Layout.jsx[22m
+[2m10:55:16 am[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/features/dashboard/DashboardPage.jsx[22m
