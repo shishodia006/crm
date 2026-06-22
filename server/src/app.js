@@ -12,6 +12,21 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 export function createApp() {
   const app = express();
 
+  // Allow the configured frontend to call this API from a separate domain.
+  // Local development keeps using the Vite proxy, while production uses APP_URL.
+  app.use((req, res, next) => {
+    const origin = req.get('origin');
+    if (origin && origin === config.appUrl) {
+      res.setHeader('Access-Control-Allow-Origin', origin);
+      res.setHeader('Access-Control-Allow-Credentials', 'true');
+      res.setHeader('Access-Control-Allow-Methods', 'GET,HEAD,POST,PUT,PATCH,DELETE,OPTIONS');
+      res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-CSRF-Token');
+      res.setHeader('Vary', 'Origin');
+      if (req.method === 'OPTIONS') return res.sendStatus(204);
+    }
+    next();
+  });
+
   // Raw body capture (needed for webhook signature verification)
   app.use((req, _res, next) => {
     express.json({
