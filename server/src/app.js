@@ -12,6 +12,10 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 export function createApp() {
   const app = express();
 
+  // Hostinger terminates HTTPS at a reverse proxy. Trust it so secure
+  // express-session cookies are issued correctly in production.
+  app.set('trust proxy', 1);
+
   // Allow the configured frontend to call this API from a separate domain.
   // Local development keeps using the Vite proxy, while production uses APP_URL.
   app.use((req, res, next) => {
