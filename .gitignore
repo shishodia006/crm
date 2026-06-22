@@ -1,4 +1,6 @@
 .env
+mysql-local.ini
+.mysql-data/
 node_modules/
 npm-debug.log*
 server.out.log
