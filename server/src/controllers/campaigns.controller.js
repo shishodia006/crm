@@ -5,7 +5,15 @@ import { transaction } from '../db/pool.js';
 export async function index(_req, res) {
   const campaigns = await q(
     `SELECT c.*, COUNT(le.id) AS enrolled, SUM(le.status='active') AS active_leads,
-            SUM(le.status='converted') AS converted, u.name AS created_by_name
+            SUM(le.status='converted') AS converted, u.name AS created_by_name,
+            (SELECT COUNT(*) FROM communications cm JOIN lead_enrollments x ON x.id=cm.enrollment_id WHERE x.campaign_id=c.id AND cm.channel='whatsapp') AS wa_sent,
+            (SELECT COUNT(*) FROM communications cm JOIN lead_enrollments x ON x.id=cm.enrollment_id WHERE x.campaign_id=c.id AND cm.channel='whatsapp' AND cm.status IN ('delivered','opened','clicked','replied')) AS wa_delivered,
+            (SELECT COUNT(*) FROM communications cm JOIN lead_enrollments x ON x.id=cm.enrollment_id WHERE x.campaign_id=c.id AND cm.channel='sms') AS sms_sent,
+            (SELECT COUNT(*) FROM communications cm JOIN lead_enrollments x ON x.id=cm.enrollment_id WHERE x.campaign_id=c.id AND cm.channel='sms' AND cm.status IN ('delivered','opened','clicked')) AS sms_delivered,
+            (SELECT COUNT(*) FROM communications cm JOIN lead_enrollments x ON x.id=cm.enrollment_id WHERE x.campaign_id=c.id AND cm.channel='rcs') AS rcs_sent,
+            (SELECT COUNT(*) FROM communications cm JOIN lead_enrollments x ON x.id=cm.enrollment_id WHERE x.campaign_id=c.id AND cm.channel='rcs' AND cm.status IN ('delivered','opened','clicked','replied')) AS rcs_delivered,
+            (SELECT COUNT(*) FROM communications cm JOIN lead_enrollments x ON x.id=cm.enrollment_id WHERE x.campaign_id=c.id AND cm.channel='email') AS email_sent,
+            (SELECT COUNT(*) FROM communications cm JOIN lead_enrollments x ON x.id=cm.enrollment_id WHERE x.campaign_id=c.id AND cm.channel='email' AND cm.status IN ('opened','clicked')) AS email_opened
      FROM campaigns c LEFT JOIN lead_enrollments le ON le.campaign_id=c.id LEFT JOIN users u ON u.id=c.created_by
      GROUP BY c.id ORDER BY c.created_at DESC`
   );
@@ -15,7 +23,10 @@ export async function index(_req, res) {
 export async function store(req, res) {
   const name = String(req.body.name || '').trim();
   if (!name) return fail(res, 'Campaign name required.', 422);
-  const entryRules = req.body.entry_source_id ? { source_id: Number(req.body.entry_source_id) } : {};
+  const rawIds = Array.isArray(req.body.entry_source_ids)
+    ? req.body.entry_source_ids.map(Number).filter(Boolean)
+    : req.body.entry_source_id ? [Number(req.body.entry_source_id)] : [];
+  const entryRules = rawIds.length ? { source_ids: rawIds } : {};
   const result = await run(
     'INSERT INTO campaigns (name,description,type,status,goal,entry_rules,created_by) VALUES (?,?,?,?,?,?,?)',
     [name, req.body.description || '', req.body.type || 'drip', 'draft', req.body.goal || '', JSON.stringify(entryRules), req.user.id]

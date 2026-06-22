@@ -88,6 +88,9 @@ export async function matchingCampaign(leadId, sourceId, conn = undefined) {
   for (const campaign of campaigns) {
     let rules = {};
     try { rules = JSON.parse(campaign.entry_rules || '{}') || {}; } catch { rules = {}; }
+    // multi-source array (new format)
+    if (Array.isArray(rules.source_ids) && rules.source_ids.map(Number).includes(Number(sourceId))) return Number(campaign.id);
+    // single source (legacy format)
     if (rules.source_id && Number(rules.source_id) === Number(sourceId)) return Number(campaign.id);
     if (rules.product_interest && lead?.product_interest &&
       String(lead.product_interest).toLowerCase().includes(String(rules.product_interest).toLowerCase())) {
@@ -173,7 +176,16 @@ export async function listLeads(filters = {}, page = 1, perPage = config.perPage
   const offset = (page - 1) * perPage;
   const total = Number(await scalar(`SELECT COUNT(*) FROM leads l WHERE ${clause}`, params));
   const data = await q(
-    `SELECT l.*, ls.name AS source_name, u.name AS assigned_name
+    `SELECT l.*, ls.name AS source_name, u.name AS assigned_name,
+       (SELECT COUNT(*) FROM communications WHERE lead_id=l.id AND channel='email') AS email_sent,
+       (SELECT COUNT(*) FROM communications WHERE lead_id=l.id AND channel='email' AND status IN ('opened','clicked')) AS email_opened,
+       (SELECT COUNT(*) FROM communications WHERE lead_id=l.id AND channel='email' AND status='clicked') AS email_clicked,
+       (SELECT COUNT(*) FROM communications WHERE lead_id=l.id AND channel='whatsapp') AS wa_sent,
+       (SELECT COUNT(*) FROM communications WHERE lead_id=l.id AND channel='whatsapp' AND status IN ('delivered','opened','clicked','replied')) AS wa_delivered,
+       (SELECT COUNT(*) FROM communications WHERE lead_id=l.id AND channel='sms') AS sms_sent,
+       (SELECT COUNT(*) FROM communications WHERE lead_id=l.id AND channel='sms' AND status IN ('delivered','opened','clicked')) AS sms_delivered,
+       (SELECT COUNT(*) FROM communications WHERE lead_id=l.id AND channel='rcs') AS rcs_sent,
+       (SELECT COUNT(*) FROM communications WHERE lead_id=l.id AND channel='rcs' AND status IN ('delivered','opened','clicked','replied')) AS rcs_delivered
      FROM leads l
      LEFT JOIN lead_sources ls ON ls.id=l.source_id
      LEFT JOIN users u ON u.id=l.assigned_to

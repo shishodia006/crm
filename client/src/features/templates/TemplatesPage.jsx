@@ -18,19 +18,35 @@ export default function TemplatesPage() {
 
   const syncWa = async () => {
     try {
-      await api.get('/api/templates/wa-sync');
-      toast('WhatsApp templates synced.', 'success');
+      const r = await api.get('/api/templates/wa-sync?save=1');
+      toast(`Synced ${r.imported ?? 0} WhatsApp templates.`, 'success');
       reload();
     } catch (err) {
       toast(err.message, 'danger');
     }
   };
 
+  const varCount = (r) => {
+    if (!r.variables) return null;
+    try {
+      const v = typeof r.variables === 'string' ? JSON.parse(r.variables) : r.variables;
+      return v?.count ?? null;
+    } catch { return null; }
+  };
+
   const columns = [
     { label: 'Name', key: 'name', render: (r) => <span className="fw-semibold">{r.name}</span> },
     { label: 'Channel', render: (r) => <span className="badge bg-primary-subtle text-primary">{r.channel}</span> },
     { label: 'Subject', render: (r) => <span className="text-truncate d-block max-w-200 text-13">{r.subject || '—'}</span> },
-    { label: 'Status', render: (r) => <span className={`badge text-bg-${r.status === 'approved' ? 'success' : r.status === 'rejected' ? 'danger' : 'secondary'}`}>{r.status}</span> },
+    {
+      label: 'Variables',
+      render: (r) => {
+        const c = varCount(r);
+        if (c === null) return <span className="text-muted text-13">—</span>;
+        return <span className="badge bg-warning-subtle text-warning fw-semibold">{c} var{c !== 1 ? 's' : ''}</span>;
+      }
+    },
+    { label: 'Status', render: (r) => <span className={`badge text-bg-${r.status === 'active' ? 'success' : r.status === 'archived' ? 'danger' : 'secondary'}`}>{r.status}</span> },
     { label: 'Updated', render: (r) => formatDate(r.updated_at) },
   ];
 

@@ -491,8 +491,22 @@ function NodeConfigPanel({ node, onClose, onChange, msgTemplates, setMsgTemplate
                 fontSize: 11, color: '#374151', lineHeight: 1.6,
                 whiteSpace: 'pre-wrap', wordBreak: 'break-word',
               }}>
-                <div style={{ fontSize: 9, fontWeight: 800, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 4 }}>
-                  Preview
+                <div style={{ display: 'flex', alignItems: 'center', marginBottom: 4, gap: 6 }}>
+                  <span style={{ fontSize: 9, fontWeight: 800, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+                    Preview
+                  </span>
+                  {(() => {
+                    try {
+                      const v = typeof selectedTpl.variables === 'string' ? JSON.parse(selectedTpl.variables) : selectedTpl.variables;
+                      const c = v?.count;
+                      if (!c) return null;
+                      return (
+                        <span style={{ fontSize: 9, fontWeight: 700, color: '#b45309', background: '#fef3c7', padding: '1px 5px', borderRadius: 3 }}>
+                          {c} variable{c !== 1 ? 's' : ''}
+                        </span>
+                      );
+                    } catch { return null; }
+                  })()}
                 </div>
                 {selectedTpl.body}
               </div>

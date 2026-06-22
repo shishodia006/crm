@@ -219,9 +219,10 @@ async function createWorkflowTask(leadId, actionDataJson) {
   let data = {};
   try { data = JSON.parse(actionDataJson || '{}'); } catch { data = {}; }
   const dueHours = Number(data.due_hours || 24);
+  const dueAt = new Date(Date.now() + dueHours * 3600 * 1000);
   await run(
-    'INSERT INTO tasks (title,description,lead_id,priority,due_at) VALUES (?,?,?,?,DATE_ADD(NOW(), INTERVAL ? HOUR))',
-    [data.title || data.task_title || 'Follow up lead', data.description || null, leadId, data.priority || 'medium', dueHours]
+    'INSERT INTO tasks (title,description,lead_id,priority,due_at) VALUES (?,?,?,?,?)',
+    [data.title || data.task_title || 'Follow up lead', data.description || null, leadId, data.priority || 'medium', dueAt]
   );
 }
 

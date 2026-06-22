@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../../services/api.js';
 import { useToast } from '../../hooks/useToast.js';
@@ -19,7 +19,7 @@ const GOALS = [
   { value: 'booked',     label: 'Appointment Booked' },
 ];
 
-const BLANK = { name: '', description: '', type: 'drip', entry_source_id: '', goal: '' };
+const BLANK = { name: '', description: '', type: 'drip', entry_source_ids: [], goal: '' };
 
 export default function CampaignForm() {
   const navigate = useNavigate();
@@ -27,6 +27,8 @@ export default function CampaignForm() {
   const [form, setForm] = useState(BLANK);
   const [sources, setSources] = useState([]);
   const [saving, setSaving] = useState(false);
+  const [sourceOpen, setSourceOpen] = useState(false);
+  const dropRef = useRef(null);
 
   useEffect(() => {
     api.get('/api/settings/sources')
@@ -34,7 +36,30 @@ export default function CampaignForm() {
       .catch(() => {});
   }, []);
 
+  useEffect(() => {
+    const handler = (e) => {
+      if (dropRef.current && !dropRef.current.contains(e.target)) setSourceOpen(false);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
+
   const set = (field) => (e) => setForm((p) => ({ ...p, [field]: e.target.value }));
+
+  const toggleSource = (id) => {
+    setForm((p) => ({
+      ...p,
+      entry_source_ids: p.entry_source_ids.includes(id)
+        ? p.entry_source_ids.filter((x) => x !== id)
+        : [...p.entry_source_ids, id],
+    }));
+  };
+
+  const sourceLabel = form.entry_source_ids.length === 0
+    ? '— Manual only —'
+    : form.entry_source_ids.length === 1
+      ? (sources.find((s) => s.id === form.entry_source_ids[0])?.name ?? '1 source')
+      : `${form.entry_source_ids.length} sources selected`;
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -94,14 +119,62 @@ export default function CampaignForm() {
                   ))}
                 </select>
               </div>
-              <div className="col-6">
+              <div className="col-6" ref={dropRef}>
                 <label className="form-label text-13 fw-semibold">Auto-enroll from Source</label>
-                <select className="form-select" value={form.entry_source_id} onChange={set('entry_source_id')}>
-                  <option value="">— Manual only —</option>
-                  {sources.map((s) => (
-                    <option key={s.id} value={s.id}>{s.name}</option>
-                  ))}
-                </select>
+                <div className="position-relative">
+                  <button
+                    type="button"
+                    className="form-select text-start d-flex align-items-center justify-content-between"
+                    style={{ cursor: 'pointer' }}
+                    onClick={() => setSourceOpen((p) => !p)}
+                  >
+                    <span className={form.entry_source_ids.length === 0 ? 'text-muted' : ''}>
+                      {sourceLabel}
+                    </span>
+                    {form.entry_source_ids.length > 0 && (
+                      <span
+                        className="badge rounded-pill text-bg-primary ms-2 flex-shrink-0"
+                        style={{ fontSize: '10px' }}
+                      >
+                        {form.entry_source_ids.length}
+                      </span>
+                    )}
+                  </button>
+
+                  {sourceOpen && (
+                    <div
+                      className="dropdown-menu show w-100 p-1 shadow-sm"
+                      style={{ maxHeight: 240, overflowY: 'auto', zIndex: 1050 }}
+                    >
+                      <button
+                        type="button"
+                        className="dropdown-item text-12 text-muted py-1 px-2"
+                        onClick={() => setForm((p) => ({ ...p, entry_source_ids: [] }))}
+                      >
+                        <i className="bi bi-x-circle me-1" />Clear selection (Manual only)
+                      </button>
+                      <div className="dropdown-divider my-1" />
+                      {sources.map((s) => {
+                        const checked = form.entry_source_ids.includes(s.id);
+                        return (
+                          <label
+                            key={s.id}
+                            className={`dropdown-item d-flex align-items-center gap-2 py-1 px-2 cursor-pointer rounded ${checked ? 'bg-primary bg-opacity-10' : ''}`}
+                            style={{ fontSize: '13px' }}
+                          >
+                            <input
+                              type="checkbox"
+                              className="form-check-input m-0 flex-shrink-0"
+                              checked={checked}
+                              onChange={() => toggleSource(s.id)}
+                            />
+                            {s.name}
+                          </label>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
 

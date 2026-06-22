@@ -40,6 +40,7 @@ router.delete('/leads/:id', adminOnly, asyncRoute(leads.destroy));
 router.post('/leads/:id/enroll', requireAuth, asyncRoute(leads.enroll));
 router.post('/leads/:id/score', requireAuth, asyncRoute(leads.addScore));
 router.get('/leads/:id/timeline', requireAuth, asyncRoute(leads.timeline));
+router.get('/leads/:id/enrollments/:eid', requireAuth, asyncRoute(leads.enrollmentDetail));
 
 // Campaigns
 router.get('/campaigns', requireAuth, asyncRoute(campaigns.index));

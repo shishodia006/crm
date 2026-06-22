@@ -9,13 +9,14 @@ import { addScoreEvent } from '../services/score.service.js';
 
 export async function index(req, res) {
   const page = Math.max(1, Number(req.query.page || 1));
+  const perPage = Math.min(100, Math.max(10, Number(req.query.limit || 25)));
   const filters = {
     search: req.query.search || '', source_id: req.query.source_id || '',
     status: req.query.status || '', category: req.query.category || '',
     assigned: req.query.assigned || '', date_from: req.query.date_from || '', date_to: req.query.date_to || ''
   };
   const [pagination, sources, agents] = await Promise.all([
-    listLeads(filters, page),
+    listLeads(filters, page, perPage),
     q("SELECT id,name FROM lead_sources WHERE is_active=1 ORDER BY CASE WHEN slug='manual' THEN 0 ELSE 1 END, name"),
     q("SELECT id,name FROM users WHERE role IN ('agent','manager') AND is_active=1 ORDER BY name")
   ]);
@@ -109,6 +110,35 @@ export async function addScore(req, res) {
 
 export async function timeline(req, res) {
   ok(res, await leadTimeline(Number(req.params.id)));
+}
+
+export async function enrollmentDetail(req, res) {
+  const leadId  = Number(req.params.id);
+  const enrollId = Number(req.params.eid);
+  const enrollment = await one(
+    `SELECT le.*, c.name AS campaign_name, c.type AS campaign_type
+     FROM lead_enrollments le JOIN campaigns c ON c.id=le.campaign_id
+     WHERE le.id=? AND le.lead_id=? LIMIT 1`,
+    [enrollId, leadId]
+  );
+  if (!enrollment) return fail(res, 'Enrollment not found.', 404);
+  const [steps, comms] = await Promise.all([
+    q(
+      `SELECT ws.id, ws.step_order, ws.type, ws.delay_value, ws.delay_unit, ws.action_data,
+              esl.status AS log_status, esl.executed_at, esl.result
+       FROM workflow_steps ws
+       LEFT JOIN enrollment_step_logs esl ON esl.step_id=ws.id AND esl.enrollment_id=?
+       WHERE ws.campaign_id=?
+       ORDER BY ws.step_order ASC`,
+      [enrollId, enrollment.campaign_id]
+    ),
+    q(
+      `SELECT channel, status, subject, created_at, sent_at, delivered_at, opened_at, failed_reason
+       FROM communications WHERE enrollment_id=? ORDER BY created_at ASC`,
+      [enrollId]
+    ),
+  ]);
+  ok(res, { enrollment, steps, comms });
 }
 
 export async function meta(_req, res) {

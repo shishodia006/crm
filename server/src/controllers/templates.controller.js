@@ -1,6 +1,16 @@
 import { one, q, run, scalar } from '../db/pool.js';
 import { ok, fail } from '../utils/response.js';
 
+// Build the variables JSON column value from an explicit count or by counting {{N}} in body
+function buildVariablesJson(rawCount, body = '') {
+  let count = rawCount != null && rawCount !== '' ? Number(rawCount) : null;
+  if (count === null) {
+    const matches = (body || '').match(/\{\{(\w+)\}\}/g) || [];
+    count = matches.length > 0 ? matches.length : null;
+  }
+  return count !== null && count > 0 ? JSON.stringify({ count }) : null;
+}
+
 export async function index(req, res) {
   const where = ['1=1'];
   const params = [];
@@ -22,12 +32,13 @@ export async function store(req, res) {
   const body = String(req.body.body || '');
   const channel = req.body.channel || 'email';
   if (!name || !body) return fail(res, 'Name and body are required.', 422);
-  if (channel === 'whatsapp' && !String(req.body.wa_template_id || '').trim()) {
-    return fail(res, 'Please select a WhatsApp template from Anantya.', 422);
+  if (['whatsapp','rcs'].includes(channel) && !String(req.body.wa_template_id || '').trim()) {
+    return fail(res, 'Please sync from Anantya to get the template ID.', 422);
   }
+  const variablesJson = buildVariablesJson(req.body.variable_count, body);
   const result = await run(
-    "INSERT INTO templates (name,channel,subject,body,wa_template_id,status,created_by) VALUES (?,?,?,?,?,'active',?)",
-    [name, channel, req.body.subject || null, body, req.body.wa_template_id || null, req.user.id]
+    "INSERT INTO templates (name,channel,subject,body,wa_template_id,variables,status,created_by) VALUES (?,?,?,?,?,?,?,?)",
+    [name, channel, req.body.subject || null, body, req.body.wa_template_id || null, variablesJson, req.body.status || 'active', req.user.id]
   );
   ok(res, { id: result.insertId }, 'Template created.');
 }
@@ -55,21 +66,37 @@ export async function syncWhatsApp(req, res) {
   const result = [];
 
   for (const t of raw) {
-    // Extract body — Anantya uses msgText; fallback to components array (Meta format)
+    // Extract body — prefer version with {{N}} placeholders
     let body = t.msgText || t.MsgText || t.body || t.Body || t.templateBody || t.TemplateBody || '';
-    if (!body && Array.isArray(t.components || t.Components)) {
-      const comps = t.components || t.Components || [];
+    let variableCount = 0;
+
+    // Also check components array (Meta/Anantya format) — may have better body text
+    const comps = t.components || t.Components || [];
+    if (Array.isArray(comps) && comps.length) {
       const bodyComp = comps.find(c => (c.type || c.Type || '').toUpperCase() === 'BODY');
-      body = bodyComp?.text || bodyComp?.Text || '';
+      if (bodyComp) {
+        const compBody = bodyComp?.text || bodyComp?.Text || '';
+        // Prefer component body if it has {{N}} placeholders or our msgText is empty
+        if (compBody && (!body || /\{\{\w+\}\}/.test(compBody))) body = compBody;
+        // Detect variable count from the example values list
+        const exampleVars = bodyComp?.example?.body_text?.[0] || bodyComp?.example?.body_text || [];
+        if (Array.isArray(exampleVars) && exampleVars.length) variableCount = exampleVars.length;
+      }
     }
+
+    // Count {{N}} or {{word}} placeholders in the final body
+    const varMatches = (body || '').match(/\{\{(\w+)\}\}/g) || [];
+    if (varMatches.length > variableCount) variableCount = varMatches.length;
+
     const waId   = String(t.id || t.templateId || t.TemplateId || t.template_id || '');
     const name   = String(t.name || t.templateName || t.TemplateName || t.Name || waId || '').trim();
     const status = String(t.status || t.Status || 'APPROVED').toUpperCase();
     const mediaUrl = t.mediaUrl || t.MediaUrl || t.header_url || null;
+    const variablesJson = variableCount > 0 ? JSON.stringify({ count: variableCount }) : null;
 
     const tplStatus = status === 'APPROVED' ? 'active' : 'draft';
 
-    result.push({ waId, name, status, body: body.slice(0, 200) });
+    result.push({ waId, name, status, body: body.slice(0, 200), variableCount });
 
     if (!saveMode || !waId) { skipped++; continue; }
 
@@ -80,13 +107,13 @@ export async function syncWhatsApp(req, res) {
     );
     if (existing) {
       await run(
-        'UPDATE templates SET name=?,body=?,media_url=?,status=?,updated_at=NOW() WHERE id=?',
-        [name, body, mediaUrl, tplStatus, existing.id]
+        'UPDATE templates SET name=?,body=?,media_url=?,variables=?,status=?,updated_at=NOW() WHERE id=?',
+        [name, body, mediaUrl, variablesJson, tplStatus, existing.id]
       );
     } else {
       await run(
-        "INSERT INTO templates (name,channel,body,wa_template_id,media_url,status,created_by) VALUES (?,?,?,?,?,?,?)",
-        [name, 'whatsapp', body, waId, mediaUrl, tplStatus, req.user?.id || 1]
+        "INSERT INTO templates (name,channel,body,wa_template_id,media_url,variables,status,created_by) VALUES (?,?,?,?,?,?,?,?)",
+        [name, 'whatsapp', body, waId, mediaUrl, variablesJson, tplStatus, req.user?.id || 1]
       );
     }
     imported++;
@@ -105,8 +132,10 @@ export async function update(req, res) {
   const name = String(req.body.name || '').trim();
   const body = String(req.body.body || '');
   if (!name || !body) return fail(res, 'Name and body are required.', 422);
-  await run('UPDATE templates SET name=?,subject=?,body=?,wa_template_id=?,updated_at=NOW() WHERE id=?', [
-    name, req.body.subject || null, body, req.body.wa_template_id || null, Number(req.params.id)
+  const variablesJson = buildVariablesJson(req.body.variable_count, body);
+  await run('UPDATE templates SET name=?,subject=?,body=?,wa_template_id=?,variables=?,status=?,updated_at=NOW() WHERE id=?', [
+    name, req.body.subject || null, body, req.body.wa_template_id || null, variablesJson,
+    req.body.status || 'active', Number(req.params.id)
   ]);
   ok(res, null, 'Template updated.');
 }

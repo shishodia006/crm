@@ -102,6 +102,7 @@ export default function LoginPage() {
           New here?{' '}
           <Link to="/register" className="text-purple fw-500 text-decoration-none">Create Account</Link>
         </p>
+        <p className="text-center text-muted mb-0 mt-2" style={{ fontSize: '10px', opacity: 0.45 }}>v1.0.0</p>
       </div>
     </div>
   );

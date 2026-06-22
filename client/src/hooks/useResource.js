@@ -1,14 +1,15 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { api } from '../services/api.js';
 
-export function useResource(path, deps = []) {
+export function useResource(path, deps = [], refreshInterval = 0) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const intervalRef = useRef(null);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (silent = false) => {
     if (!path) return;
-    setLoading(true);
+    if (!silent) setLoading(true);
     setError(null);
     try {
       const res = await api.get(path);
@@ -16,12 +17,18 @@ export function useResource(path, deps = []) {
     } catch (err) {
       setError(err.message || 'Failed to load');
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [path, ...deps]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => { load(false); }, [load]);
 
-  return { data, loading, error, reload: load };
+  useEffect(() => {
+    if (!refreshInterval) return;
+    intervalRef.current = setInterval(() => load(true), refreshInterval);
+    return () => clearInterval(intervalRef.current);
+  }, [load, refreshInterval]);
+
+  return { data, loading, error, reload: () => load(false) };
 }
