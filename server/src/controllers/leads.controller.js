@@ -149,7 +149,7 @@ export async function enrollmentDetail(req, res) {
   ok(res, { enrollment, steps, comms });
 }
 
-export async function meta(_req, res) {
+export async function meta(req, res) {
   const [sources, agents, stages, templates, campaigns] = await Promise.all([
     q('SELECT id,name,slug,category FROM lead_sources WHERE is_active=1 ORDER BY name'),
     q("SELECT id,name,email,role FROM users WHERE role IN ('agent','manager','admin','superadmin') AND is_active=1 ORDER BY name"),

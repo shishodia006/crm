@@ -32,8 +32,8 @@ export async function index(req, res) {
     [req.companyId]
   );
   const channelRows = await q(
-    `SELECT channel, COUNT(*) AS sent, SUM(status IN ('opened','clicked','read','delivered')) AS delivered, SUM(status='failed') AS failed
-     FROM communications cm JOIN leads l ON l.id=cm.lead_id WHERE l.company_id=? AND sent_at >= DATE_SUB(NOW(), INTERVAL 7 DAY) GROUP BY channel`,
+    `SELECT cm.channel, COUNT(*) AS sent, SUM(cm.status IN ('opened','clicked','read','delivered')) AS delivered, SUM(cm.status='failed') AS failed
+     FROM communications cm JOIN leads l ON l.id=cm.lead_id WHERE l.company_id=? AND cm.sent_at >= DATE_SUB(NOW(), INTERVAL 7 DAY) GROUP BY cm.channel`,
     [req.companyId]
   );
   const channelSends = Object.fromEntries(channelRows.map((row) => [row.channel, row]));
