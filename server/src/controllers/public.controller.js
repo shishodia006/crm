@@ -5,12 +5,12 @@ import { ipAddress } from '../utils/helpers.js';
 import { safeEquals } from '../utils/crypto.js';
 import { decodeTrackingUid } from '../utils/crypto.js';
 import { processLead } from '../services/lead.service.js';
-import { addScoreEvent } from '../services/score.service.js';
 import { updateById } from '../db/pool.js';
 import { config } from '../config/index.js';
 import { getSetting, saveSetting } from '../services/settings.service.js';
 import { processDue } from '../services/drip.service.js';
 import { processJobs } from '../services/job.service.js';
+import { extractWebhookEvents, recordCommunicationEvent } from '../services/engagement.service.js';
 
 export async function ingest(req, res) {
   const expected = config.apiToken;
@@ -41,22 +41,41 @@ export async function ingest(req, res) {
 }
 
 export async function webhook(req, res) {
-  await run('INSERT INTO webhook_logs (source,payload,status,ip) VALUES (?,?,?,?)', [
+  let account = null;
+  if (req.params.webhookKey) {
+    account = await one('SELECT * FROM integration_accounts WHERE webhook_key=? AND is_active=1 LIMIT 1', [req.params.webhookKey]);
+    if (!account) return fail(res, 'Webhook endpoint not found.', 404);
+    if (req.method !== 'GET' && account.webhook_secret) {
+      const rawSignature = req.get('x-hub-signature-256') || req.get('x-webhook-signature') || req.get('x-signature') || '';
+      const provided = rawSignature.replace(/^sha256=/i, '').trim();
+      const expected = crypto.createHmac('sha256', account.webhook_secret).update(req.rawBody || '').digest('hex');
+      if (!safeEquals(expected, provided)) return fail(res, 'Invalid webhook signature.', 401);
+    }
+  }
+  const logResult = await run('INSERT INTO webhook_logs (source,payload,status,ip) VALUES (?,?,?,?)', [
     req.params.source, req.rawBody || JSON.stringify(req.body || {}), 'received', ipAddress(req)
   ]);
   if (req.method === 'GET') {
     const token = req.query.hub_verify_token || req.query['hub.verify_token'];
     const challenge = req.query.hub_challenge || req.query['hub.challenge'] || '';
     const source = req.params.source;
-    const verifyToken = source === 'meta' || source === 'meta_leads'
-      ? await getSetting('meta_verify_token')
-      : await getSetting('wa_webhook_token', process.env.WA_WEBHOOK_TOKEN || '');
+    let accountConfig = {};
+    try { accountConfig = JSON.parse(account?.config || '{}'); } catch {}
+    const verifyToken = accountConfig.verify_token || (source === 'meta' || source === 'meta_leads'
+      ? await getSetting('meta_verify_token', '', account?.company_id)
+      : await getSetting('wa_webhook_token', process.env.WA_WEBHOOK_TOKEN || '')
+    );
     if ((req.query.hub_mode || req.query['hub.mode']) === 'subscribe' && token === verifyToken) {
       return res.type('text/plain').send(String(challenge));
     }
     return fail(res, 'Verification failed', 403);
   }
-  res.json({ status: 'ok' });
+  const events = extractWebhookEvents(req.body || {});
+  const results = await Promise.all(events.map((event) => recordCommunicationEvent({
+    ...event, provider: account?.provider || event.provider || req.params.source, companyId: account?.company_id || null
+  })));
+  await run('UPDATE webhook_logs SET status=? WHERE id=?', [results.some((event) => event.recorded) ? 'processed' : 'ignored', logResult.insertId]);
+  res.json({ status: 'ok', events_received: events.length, events_recorded: results.filter((event) => event.recorded).length });
 }
 
 export async function trackOpen(req, res) {
@@ -65,7 +84,7 @@ export async function trackOpen(req, res) {
     const comm = await one('SELECT * FROM communications WHERE id=? LIMIT 1', [commId]);
     if (comm && !comm.opened_at) {
       await run("UPDATE communications SET status='opened', opened_at=NOW() WHERE id=?", [commId]);
-      await addScoreEvent(Number(comm.lead_id), 'email_open', 'communication', commId);
+      await recordCommunicationEvent({ provider: 'email_tracking', communicationId: comm.id, eventType: 'opened', payload: { communication_id: comm.id } });
     }
   }
   res.setHeader('Content-Type', 'image/gif');
@@ -81,7 +100,8 @@ export async function trackClick(req, res) {
     if (comm) {
       await run('INSERT INTO email_link_clicks (communication_id,lead_id,url,ip) VALUES (?,?,?,?)', [commId, comm.lead_id, url, ipAddress(req)]);
       await run("UPDATE communications SET status='clicked', clicked_at=NOW() WHERE id=?", [commId]);
-      const score = await addScoreEvent(Number(comm.lead_id), 'email_click', 'communication', commId);
+      const scoreResult = await recordCommunicationEvent({ provider: 'email_tracking', communicationId: comm.id, eventType: 'clicked', payload: { communication_id: comm.id, url } });
+      const score = scoreResult.recorded ? Number((await one('SELECT score FROM leads WHERE id=? LIMIT 1', [comm.lead_id]))?.score || 0) : 0;
       if (score >= 76) await updateById('leads', Number(comm.lead_id), { category: 'hot' });
     }
   }

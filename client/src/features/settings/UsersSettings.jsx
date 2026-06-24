@@ -10,11 +10,15 @@ const BLANK = { name: '', email: '', password: '', role: 'agent' };
 export default function UsersSettings() {
   const toast = useToast();
   const { data, loading, reload } = useResource('/api/settings/users');
+  const { data: membersData, reload: reloadMembers } = useResource('/api/companies/members');
   const users = data?.users ?? [];
+  const members = membersData?.members ?? [];
   const [form, setForm] = useState(BLANK);
   const [saving, setSaving] = useState(false);
   const [showForm, setShowForm] = useState(false);
   const [editUser, setEditUser] = useState(null);
+  const [memberUserId, setMemberUserId] = useState('');
+  const [memberRole, setMemberRole] = useState('agent');
 
   const set = (k, v) => setForm((p) => ({ ...p, [k]: v }));
 
@@ -27,6 +31,7 @@ export default function UsersSettings() {
       setForm(BLANK);
       setShowForm(false);
       reload();
+      reloadMembers();
     } catch (err) {
       toast(err.message, 'danger');
     } finally {
@@ -63,6 +68,22 @@ export default function UsersSettings() {
     setEditUser(user);
     setForm({ name: user.name, email: user.email, password: '', role: user.role });
     setShowForm(false);
+  };
+
+  const saveCompanyMember = async (event) => {
+    event.preventDefault();
+    if (!memberUserId) return;
+    try {
+      await api.post('/api/companies/members', { user_id: Number(memberUserId), role: memberRole });
+      setMemberUserId(''); setMemberRole('agent'); reloadMembers();
+      toast('Company access saved.', 'success');
+    } catch (error) { toast(error.message, 'danger'); }
+  };
+
+  const removeCompanyMember = async (userId) => {
+    if (!window.confirm('Remove this user from the selected company?')) return;
+    try { await api.delete(`/api/companies/members/${userId}`); reloadMembers(); toast('Company access removed.', 'success'); }
+    catch (error) { toast(error.message, 'danger'); }
   };
 
   if (loading) return <LoadingBox />;
@@ -212,6 +233,19 @@ export default function UsersSettings() {
               ))}
             </tbody>
           </table>
+        </div>
+      </div>
+
+      <div className="card crm-card mt-4">
+        <div className="card-body p-4">
+          <h6 className="fw-bold mb-1">Selected Company Access</h6>
+          <p className="text-muted text-12 mb-3">Only these members can switch to and work inside the selected company.</p>
+          <form className="row g-2 align-items-end mb-3" onSubmit={saveCompanyMember}>
+            <div className="col-md-6"><label className="crm-label">User</label><select className="form-select crm-select" value={memberUserId} onChange={(e) => setMemberUserId(e.target.value)} required><option value="">— Select user —</option>{users.filter((user) => user.is_active).map((user) => <option key={user.id} value={user.id}>{user.name} · {user.email}</option>)}</select></div>
+            <div className="col-md-3"><label className="crm-label">Company role</label><select className="form-select crm-select" value={memberRole} onChange={(e) => setMemberRole(e.target.value)}>{['agent','manager','admin','viewer'].map((role) => <option key={role} value={role}>{role}</option>)}</select></div>
+            <div className="col-md-3"><button className="btn btn-crm w-100">Save access</button></div>
+          </form>
+          <div className="table-responsive"><table className="table table-sm align-middle mb-0"><thead><tr><th>Member</th><th>Company role</th><th /></tr></thead><tbody>{members.length === 0 ? <tr><td colSpan={3} className="text-muted">No company members yet.</td></tr> : members.map((member) => <tr key={member.id}><td><strong>{member.name}</strong><div className="text-muted text-11">{member.email}</div></td><td><span className="badge text-bg-light border text-capitalize">{member.company_role || member.role}</span></td><td className="text-end"><button type="button" className="btn btn-outline-danger btn-sm" onClick={() => removeCompanyMember(member.id)}>Remove</button></td></tr>)}</tbody></table></div>
         </div>
       </div>
     </div>

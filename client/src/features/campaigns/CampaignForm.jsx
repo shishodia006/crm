@@ -19,7 +19,11 @@ const GOALS = [
   { value: 'booked',     label: 'Appointment Booked' },
 ];
 
-const BLANK = { name: '', description: '', type: 'drip', entry_source_ids: [], goal: '' };
+const BLANK = {
+  name: '', description: '', type: 'drip', entry_source_ids: [], goal: '',
+  reentry: 'always', reentry_after_days: 30,
+  quiet_hours: { enabled: false, start: '21:00', end: '09:00' }
+};
 
 export default function CampaignForm() {
   const navigate = useNavigate();
@@ -185,6 +189,39 @@ export default function CampaignForm() {
                   <option key={g.value} value={g.value}>{g.label}</option>
                 ))}
               </select>
+            </div>
+
+            <div className="border rounded-3 p-3 mb-4 bg-light-subtle">
+              <div className="fw-semibold text-13 mb-3"><i className="bi bi-sliders me-1" />Automation controls</div>
+              <div className="row g-3">
+                <div className="col-md-6">
+                  <label className="form-label text-12 fw-semibold">Re-entry rule</label>
+                  <select className="form-select form-select-sm" value={form.reentry} onChange={set('reentry')}>
+                    <option value="always">Allow re-entry anytime</option>
+                    <option value="never">Only once</option>
+                    <option value="after_days">Allow after a waiting period</option>
+                  </select>
+                </div>
+                {form.reentry === 'after_days' && (
+                  <div className="col-md-6">
+                    <label className="form-label text-12 fw-semibold">Wait before re-entry (days)</label>
+                    <input type="number" min="1" className="form-control form-control-sm" value={form.reentry_after_days} onChange={set('reentry_after_days')} />
+                  </div>
+                )}
+                <div className="col-12">
+                  <label className="form-check-label text-12 fw-semibold d-flex align-items-center gap-2">
+                    <input type="checkbox" className="form-check-input mt-0" checked={form.quiet_hours.enabled}
+                      onChange={(e) => setForm((p) => ({ ...p, quiet_hours: { ...p.quiet_hours, enabled: e.target.checked } }))} />
+                    Quiet hours — do not send during this window
+                  </label>
+                </div>
+                {form.quiet_hours.enabled && (
+                  <>
+                    <div className="col-6"><label className="form-label text-12">Start</label><input type="time" className="form-control form-control-sm" value={form.quiet_hours.start} onChange={(e) => setForm((p) => ({ ...p, quiet_hours: { ...p.quiet_hours, start: e.target.value } }))} /></div>
+                    <div className="col-6"><label className="form-label text-12">End</label><input type="time" className="form-control form-control-sm" value={form.quiet_hours.end} onChange={(e) => setForm((p) => ({ ...p, quiet_hours: { ...p.quiet_hours, end: e.target.value } }))} /></div>
+                  </>
+                )}
+              </div>
             </div>
 
             <div className="d-flex gap-2">

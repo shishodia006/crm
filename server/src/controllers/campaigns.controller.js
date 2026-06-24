@@ -15,7 +15,8 @@ export async function index(_req, res) {
             (SELECT COUNT(*) FROM communications cm JOIN lead_enrollments x ON x.id=cm.enrollment_id WHERE x.campaign_id=c.id AND cm.channel='email') AS email_sent,
             (SELECT COUNT(*) FROM communications cm JOIN lead_enrollments x ON x.id=cm.enrollment_id WHERE x.campaign_id=c.id AND cm.channel='email' AND cm.status IN ('opened','clicked')) AS email_opened
      FROM campaigns c LEFT JOIN lead_enrollments le ON le.campaign_id=c.id LEFT JOIN users u ON u.id=c.created_by
-     GROUP BY c.id ORDER BY c.created_at DESC`
+     WHERE c.company_id=? GROUP BY c.id ORDER BY c.created_at DESC`,
+    [req.companyId]
   );
   ok(res, { campaigns });
 }
@@ -26,18 +27,27 @@ export async function store(req, res) {
   const rawIds = Array.isArray(req.body.entry_source_ids)
     ? req.body.entry_source_ids.map(Number).filter(Boolean)
     : req.body.entry_source_id ? [Number(req.body.entry_source_id)] : [];
-  const entryRules = rawIds.length ? { source_ids: rawIds } : {};
+  const entryRules = {
+    ...(rawIds.length ? { source_ids: rawIds } : {}),
+    reentry: req.body.reentry || 'always',
+    reentry_after_days: Math.max(0, Number(req.body.reentry_after_days || 0)),
+    quiet_hours: req.body.quiet_hours?.enabled ? {
+      enabled: true,
+      start: req.body.quiet_hours.start || '21:00',
+      end: req.body.quiet_hours.end || '09:00'
+    } : { enabled: false }
+  };
   const result = await run(
-    'INSERT INTO campaigns (name,description,type,status,goal,entry_rules,created_by) VALUES (?,?,?,?,?,?,?)',
-    [name, req.body.description || '', req.body.type || 'drip', 'draft', req.body.goal || '', JSON.stringify(entryRules), req.user.id]
+    'INSERT INTO campaigns (company_id,name,description,type,status,goal,entry_rules,created_by) VALUES (?,?,?,?,?,?,?,?)',
+    [req.companyId, name, req.body.description || '', req.body.type || 'drip', 'draft', req.body.goal || '', JSON.stringify(entryRules), req.user.id]
   );
   ok(res, { id: result.insertId }, 'Campaign created.');
 }
 
 export async function show(req, res) {
-  const campaign = await one('SELECT * FROM campaigns WHERE id=? LIMIT 1', [Number(req.params.id)]);
+  const campaign = await one('SELECT * FROM campaigns WHERE id=? AND company_id=? LIMIT 1', [Number(req.params.id), req.companyId]);
   if (!campaign) return fail(res, 'Campaign not found.', 404);
-  const [stats, channels, workflowSteps] = await Promise.all([
+  const [stats, channels, workflowSteps, stepAnalytics] = await Promise.all([
     one(
       `SELECT COUNT(*) AS total, SUM(status='active') AS active, SUM(status='completed') AS completed,
               SUM(status='converted') AS converted, SUM(status='exited') AS exited
@@ -50,33 +60,54 @@ export async function show(req, res) {
        FROM communications cm JOIN lead_enrollments le ON le.id=cm.enrollment_id WHERE le.campaign_id=? GROUP BY cm.channel`,
       [campaign.id]
     ),
-    q('SELECT * FROM workflow_steps WHERE campaign_id=? ORDER BY step_order ASC', [campaign.id])
+    q('SELECT * FROM workflow_steps WHERE campaign_id=? ORDER BY step_order ASC', [campaign.id]),
+    q(
+      `SELECT ws.id AS step_id, ws.step_order, ws.type,
+              COUNT(DISTINCT cm.id) AS sent,
+              COUNT(DISTINCT CASE WHEN ce.event_type='delivered' THEN ce.id END) AS delivered,
+              COUNT(DISTINCT CASE WHEN ce.event_type IN ('read','opened') THEN ce.id END) AS read_or_opened,
+              COUNT(DISTINCT CASE WHEN ce.event_type='clicked' THEN ce.id END) AS clicked,
+              COUNT(DISTINCT CASE WHEN ce.event_type='replied' THEN ce.id END) AS replied,
+              COUNT(DISTINCT CASE WHEN ce.event_type IN ('failed','bounced') THEN ce.id END) AS failed
+       FROM workflow_steps ws
+       LEFT JOIN communications cm ON cm.step_id=ws.id
+       LEFT JOIN communication_events ce ON ce.communication_id=cm.id
+       WHERE ws.campaign_id=? GROUP BY ws.id ORDER BY ws.step_order ASC`,
+      [campaign.id]
+    )
   ]);
-  ok(res, { campaign, stats, channels, workflowSteps });
+  ok(res, { campaign, stats, channels, workflowSteps, stepAnalytics });
 }
 
 export async function update(req, res) {
-  await run('UPDATE campaigns SET name=?, description=?, goal=? WHERE id=?', [
-    req.body.name, req.body.description || '', req.body.goal || '', Number(req.params.id)
+  const campaign = await one('SELECT entry_rules FROM campaigns WHERE id=? AND company_id=? LIMIT 1', [Number(req.params.id), req.companyId]);
+  if (!campaign) return fail(res, 'Campaign not found.', 404);
+  let entryRules = {};
+  try { entryRules = JSON.parse(campaign.entry_rules || '{}'); } catch {}
+  if (req.body.reentry !== undefined) entryRules.reentry = req.body.reentry;
+  if (req.body.reentry_after_days !== undefined) entryRules.reentry_after_days = Math.max(0, Number(req.body.reentry_after_days || 0));
+  if (req.body.quiet_hours !== undefined) entryRules.quiet_hours = req.body.quiet_hours;
+  await run('UPDATE campaigns SET name=?, description=?, goal=?, entry_rules=? WHERE id=? AND company_id=?', [
+    req.body.name, req.body.description || '', req.body.goal || '', JSON.stringify(entryRules), Number(req.params.id), req.companyId
   ]);
   ok(res, null, 'Campaign updated.');
 }
 
 export async function activate(req, res) {
-  await run("UPDATE campaigns SET status='active' WHERE id=?", [Number(req.params.id)]);
+  await run("UPDATE campaigns SET status='active' WHERE id=? AND company_id=?", [Number(req.params.id), req.companyId]);
   ok(res, null, 'Campaign activated.');
 }
 
 export async function pause(req, res) {
-  await run("UPDATE campaigns SET status='paused' WHERE id=?", [Number(req.params.id)]);
+  await run("UPDATE campaigns SET status='paused' WHERE id=? AND company_id=?", [Number(req.params.id), req.companyId]);
   ok(res, null, 'Campaign paused.');
 }
 
 export async function builder(req, res) {
-  const campaign = await one('SELECT * FROM campaigns WHERE id=? LIMIT 1', [Number(req.params.id)]);
+  const campaign = await one('SELECT * FROM campaigns WHERE id=? AND company_id=? LIMIT 1', [Number(req.params.id), req.companyId]);
   if (!campaign) return fail(res, 'Campaign not found.', 404);
   const [templates, agents, stages, workflowSteps] = await Promise.all([
-    q("SELECT id,name,channel,subject,body,wa_template_id FROM templates WHERE status!='archived' ORDER BY channel,name"),
+    q("SELECT id,name,channel,subject,body,wa_template_id FROM templates WHERE status!='archived' AND company_id=? ORDER BY channel,name", [req.companyId]),
     q("SELECT id,name FROM users WHERE role IN ('agent','manager') AND is_active=1 ORDER BY name"),
     q('SELECT id,name FROM pipeline_stages WHERE is_active=1 ORDER BY stage_order'),
     q('SELECT * FROM workflow_steps WHERE campaign_id=? ORDER BY step_order ASC', [campaign.id])
@@ -86,12 +117,14 @@ export async function builder(req, res) {
 
 export async function saveSteps(req, res) {
   const campaignId = Number(req.params.id);
+  const campaign = await one('SELECT id FROM campaigns WHERE id=? AND company_id=? LIMIT 1', [campaignId, req.companyId]);
+  if (!campaign) return fail(res, 'Campaign not found.', 404);
   const steps = Array.isArray(req.body.steps) ? req.body.steps : [];
   const connections = Array.isArray(req.body.connections) ? req.body.connections : [];
   const activate = req.body.activate === true || req.body.activate === 'true';
   if (!steps.length) return ok(res, null, 'No steps to save.');
 
-  const VALID_TYPES = ['email','whatsapp','rcs','sms','send_email','send_whatsapp','send_rcs','send_sms','multi_send','wait','condition','assign_agent','task','create_task','move_pipeline','update_score','exit'];
+  const VALID_TYPES = ['email','whatsapp','rcs','sms','send_email','send_whatsapp','send_rcs','send_sms','multi_send','wait','condition','assign_agent','task','create_task','move_pipeline','update_score','tag_lead','exit'];
   const badStep = steps.find(s => !s.type || !VALID_TYPES.includes(s.type));
   if (badStep) return fail(res, `Invalid step type: "${badStep.type || '(empty)'}". Check your workflow nodes.`, 422);
 
@@ -109,6 +142,7 @@ export async function saveSteps(req, res) {
         condition_val: step.condition_op === 'is_true' ? '1' : step.condition_val || '',
         stage_id: step.pipeline_stage || null, pipeline_stage: step.pipeline_stage || null,
         title: step.task_title || '', task_title: step.task_title || '',
+        tag_name: String(step.tag_name || '').trim(),
         x: Number(step.x || 0), y: Number(step.y || 0),
         ...extraAd,
       };

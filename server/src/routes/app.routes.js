@@ -3,6 +3,7 @@ import multer from 'multer';
 import path from 'path';
 import { asyncRoute } from '../utils/response.js';
 import { requireAuth, requireRoles } from '../middleware/auth.js';
+import { requireCompany, selectCompany } from '../middleware/company.js';
 import { config } from '../config/index.js';
 import * as leads from '../controllers/leads.controller.js';
 import * as campaigns from '../controllers/campaigns.controller.js';
@@ -13,6 +14,7 @@ import * as reports from '../controllers/reports.controller.js';
 import * as settings from '../controllers/settings.controller.js';
 import * as dashboard from '../controllers/dashboard.controller.js';
 import * as notifications from '../controllers/notifications.controller.js';
+import * as companies from '../controllers/companies.controller.js';
 
 const router = Router();
 const upload = multer({
@@ -26,8 +28,21 @@ const managerUp = requireRoles('admin', 'superadmin', 'manager');
 // Meta & Dashboard
 router.get('/meta', requireAuth, asyncRoute(leads.meta));
 router.get('/dashboard', requireAuth, asyncRoute(dashboard.index));
+router.get('/dashboard/master', adminOnly, asyncRoute(dashboard.master));
 router.get('/stats/daily', requireAuth, asyncRoute(dashboard.dailyStats));
 router.get('/notifications', requireAuth, asyncRoute(notifications.index));
+
+// Company context and membership
+router.get('/companies', requireAuth, asyncRoute(companies.index));
+router.post('/companies', adminOnly, asyncRoute(companies.store));
+router.post('/companies/select', requireAuth, selectCompany, asyncRoute(companies.select));
+router.get('/companies/members', requireAuth, requireCompany, asyncRoute(companies.members));
+router.post('/companies/members', adminOnly, requireCompany, asyncRoute(companies.saveMember));
+router.delete('/companies/members/:userId', adminOnly, requireCompany, asyncRoute(companies.removeMember));
+
+// Everything below is tenant-scoped. This keeps IDs from another company from
+// being readable or writable merely by guessing them in the URL.
+router.use(requireAuth, requireCompany);
 
 // Leads
 router.get('/leads', requireAuth, asyncRoute(leads.index));
@@ -91,6 +106,9 @@ router.post('/settings/users', adminOnly, asyncRoute(settings.createUser));
 router.patch('/settings/users/:id', adminOnly, asyncRoute(settings.updateUser));
 router.get('/settings/integrations', adminOnly, asyncRoute(settings.getIntegrations));
 router.post('/settings/integrations', adminOnly, asyncRoute(settings.saveIntegrations));
+router.get('/settings/integration-accounts', adminOnly, asyncRoute(settings.integrationAccounts));
+router.post('/settings/integration-accounts', adminOnly, asyncRoute(settings.saveIntegrationAccount));
+router.delete('/settings/integration-accounts/:id', adminOnly, asyncRoute(settings.deleteIntegrationAccount));
 router.get('/settings/sources', adminOnly, asyncRoute(settings.getSources));
 router.get('/settings/pipeline', adminOnly, asyncRoute(settings.getPipelineStages));
 router.post('/settings/pipeline', adminOnly, asyncRoute(settings.savePipelineStages));

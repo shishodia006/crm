@@ -2,11 +2,12 @@ import bcrypt from 'bcryptjs';
 import { one, q, run, updateById } from '../db/pool.js';
 import { ok, fail } from '../utils/response.js';
 import { boolInt } from '../utils/helpers.js';
-import { getSetting, saveSetting } from '../services/settings.service.js';
+import { companySettings, saveCompanySetting } from '../services/settings.service.js';
+import crypto from 'crypto';
 
-export async function getSettings(_req, res) {
-  const rows = await q('SELECT `key`,`value`,`group` FROM settings ORDER BY `group`,`key`');
-  ok(res, { settings: Object.fromEntries(rows.map((row) => [row.key, row.value])), rows });
+export async function getSettings(req, res) {
+  const result = await companySettings(req.companyId);
+  ok(res, { settings: result.values, rows: result.rows });
 }
 
 export async function saveSettings(req, res) {
@@ -17,7 +18,7 @@ export async function saveSettings(req, res) {
     'score_wa_reply','score_website_visit','score_meeting_booked','score_quotation_requested','score_purchase_completed','ai_enabled'
   ];
   for (const key of allowed) {
-    if (req.body[key] !== undefined) await saveSetting(key, req.body[key], 'general');
+    if (req.body[key] !== undefined) await saveCompanySetting(req.companyId, key, req.body[key], 'general');
   }
   ok(res, null, 'Settings saved.');
 }
@@ -38,6 +39,7 @@ export async function createUser(req, res) {
   if (exists) return fail(res, 'Email already exists.', 422);
   const hashed = await bcrypt.hash(password, 12);
   const result = await run('INSERT INTO users (name,email,password,role) VALUES (?,?,?,?)', [name, email, hashed, role]);
+  await run('INSERT INTO company_users (company_id,user_id,role) VALUES (?,?,?)', [req.companyId, result.insertId, role === 'admin' ? 'admin' : role === 'manager' ? 'manager' : 'agent']);
   ok(res, { id: result.insertId }, `User ${name} created.`);
 }
 
@@ -51,12 +53,12 @@ export async function updateUser(req, res) {
   ok(res, null, 'User updated.');
 }
 
-export async function getIntegrations(_req, res) {
+export async function getIntegrations(req, res) {
   const [integrations, settingsRows] = await Promise.all([
-    q('SELECT * FROM integrations ORDER BY type,name'),
-    q("SELECT `key`,`value` FROM settings WHERE `group` IN ('email','whatsapp','sms','rcs','general','sources')")
+    q('SELECT * FROM integrations WHERE company_id=? ORDER BY type,name', [req.companyId]),
+    companySettings(req.companyId, ['email','whatsapp','sms','rcs','general','sources'])
   ]);
-  ok(res, { integrations, settings: Object.fromEntries(settingsRows.map((row) => [row.key, row.value])) });
+  ok(res, { integrations, settings: settingsRows.values });
 }
 
 export async function saveIntegrations(req, res) {
@@ -73,15 +75,50 @@ export async function saveIntegrations(req, res) {
     google_ads_customer_id: 'sources', linkedin_token: 'sources', linkedin_org_urn: 'sources', justdial_key: 'sources', justdial_login: 'sources'
   };
   for (const [key, group] of Object.entries(groupMap)) {
-    if (req.body[key] !== undefined) await saveSetting(key, req.body[key], group);
+    if (req.body[key] !== undefined) await saveCompanySetting(req.companyId, key, req.body[key], group);
   }
   ok(res, null, 'Integrations saved.');
 }
 
-export async function getSources(_req, res) {
+export async function integrationAccounts(req, res) {
+  const accounts = await q(
+    'SELECT id,name,provider,channel,external_account_id,webhook_key,is_active,created_at,updated_at FROM integration_accounts WHERE company_id=? ORDER BY provider,name',
+    [req.companyId]
+  );
+  ok(res, { accounts });
+}
+
+export async function saveIntegrationAccount(req, res) {
+  const name = String(req.body.name || '').trim();
+  const provider = String(req.body.provider || '').trim().toLowerCase();
+  const channel = String(req.body.channel || 'other').trim();
+  if (!name || !provider) return fail(res, 'Account name and provider are required.', 422);
+  if (!['email','whatsapp','rcs','sms','lead_source','other'].includes(channel)) return fail(res, 'Invalid channel.', 422);
+  const config = req.body.config && typeof req.body.config === 'object' ? JSON.stringify(req.body.config) : null;
+  if (req.body.id) {
+    await run(
+      'UPDATE integration_accounts SET name=?,provider=?,channel=?,external_account_id=?,webhook_secret=?,config=?,is_active=? WHERE id=? AND company_id=?',
+      [name, provider, channel, req.body.external_account_id || null, req.body.webhook_secret || null, config, boolInt(req.body.is_active ?? true), Number(req.body.id), req.companyId]
+    );
+    return ok(res, { id: Number(req.body.id) }, 'Integration account updated.');
+  }
+  const webhookKey = crypto.randomBytes(24).toString('hex');
+  const result = await run(
+    'INSERT INTO integration_accounts (company_id,name,provider,channel,external_account_id,webhook_key,webhook_secret,config,is_active) VALUES (?,?,?,?,?,?,?,?,?)',
+    [req.companyId, name, provider, channel, req.body.external_account_id || null, webhookKey, req.body.webhook_secret || null, config, boolInt(req.body.is_active ?? true)]
+  );
+  ok(res, { id: result.insertId, webhook_key: webhookKey }, 'Integration account created.');
+}
+
+export async function deleteIntegrationAccount(req, res) {
+  await run('DELETE FROM integration_accounts WHERE id=? AND company_id=?', [Number(req.params.id), req.companyId]);
+  ok(res, null, 'Integration account deleted.');
+}
+
+export async function getSources(req, res) {
   const sources = await q(
-    `SELECT ls.*, COUNT(l.id) AS lead_count FROM lead_sources ls LEFT JOIN leads l ON l.source_id=ls.id
-     GROUP BY ls.id ORDER BY ls.category, ls.name`
+    `SELECT ls.*, COUNT(l.id) AS lead_count FROM lead_sources ls LEFT JOIN leads l ON l.source_id=ls.id AND l.company_id=?
+     GROUP BY ls.id ORDER BY ls.category, ls.name`, [req.companyId]
   );
   ok(res, { sources });
 }

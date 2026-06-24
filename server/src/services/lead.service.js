@@ -61,13 +61,17 @@ export function validateLead(data, req) {
   return { clean, errors, valid: Object.keys(errors).length === 0 };
 }
 
-export async function findLeadByEmailOrMobile(email = '', mobile = '') {
+export async function findLeadByEmailOrMobile(email = '', mobile = '', companyId = null, conn = undefined) {
+  const { pool } = await import('../db/pool.js');
+  const db = conn || pool;
   const clauses = [];
   const params = [];
   if (email) { clauses.push('email = ?'); params.push(email); }
   if (mobile) { clauses.push('mobile = ?'); params.push(mobile); }
   if (!clauses.length) return null;
-  return one(`SELECT * FROM leads WHERE ${clauses.join(' OR ')} ORDER BY created_at ASC LIMIT 1`, params);
+  const contactClause = `(${clauses.join(' OR ')})`;
+  if (companyId) { params.push(Number(companyId)); }
+  return one(`SELECT * FROM leads WHERE ${contactClause}${companyId ? ' AND company_id = ?' : ''} ORDER BY created_at ASC LIMIT 1`, params, db);
 }
 
 export async function insertLead(data, conn = undefined) {
@@ -80,10 +84,10 @@ export async function insertLead(data, conn = undefined) {
   return Number(result.insertId);
 }
 
-export async function matchingCampaign(leadId, sourceId, conn = undefined) {
+export async function matchingCampaign(leadId, sourceId, companyId = null, conn = undefined) {
   const { pool } = await import('../db/pool.js');
   const db = conn || pool;
-  const campaigns = await q("SELECT id,entry_rules FROM campaigns WHERE status='active' AND type='drip'", [], db);
+  const campaigns = await q(`SELECT id,entry_rules FROM campaigns WHERE status='active' AND type='drip'${companyId ? ' AND company_id=?' : ''}`, companyId ? [Number(companyId)] : [], db);
   const lead = await one('SELECT * FROM leads WHERE id=? LIMIT 1', [leadId], db);
   for (const campaign of campaigns) {
     let rules = {};
@@ -109,7 +113,9 @@ export async function processLead(rawData, sourceId, campaignId, req, conn = und
   if (!valid) return { success: false, lead_id: null, is_duplicate: false, errors };
 
   clean.source_id = Number(sourceId);
-  const existing = await findLeadByEmailOrMobile(clean.email || '', clean.mobile || '');
+  const companyId = Number(req?.companyId || rawData.company_id || 0) || null;
+  if (companyId) clean.company_id = companyId;
+  const existing = await findLeadByEmailOrMobile(clean.email || '', clean.mobile || '', companyId, db);
   let leadId;
   let isDuplicate = false;
 
@@ -134,7 +140,7 @@ export async function processLead(rawData, sourceId, campaignId, req, conn = und
   }
 
   await enqueueJob('segment_lead', { lead_id: leadId }, db);
-  const autoCampaignId = campaignId || (await matchingCampaign(leadId, sourceId, db));
+  const autoCampaignId = campaignId || (await matchingCampaign(leadId, sourceId, companyId, db));
   if (autoCampaignId) await enqueueJob('enroll_lead', { lead_id: leadId, campaign_id: autoCampaignId }, db);
   return { success: true, lead_id: leadId, is_duplicate: isDuplicate, errors: [] };
 }
@@ -157,9 +163,10 @@ export async function leadTimeline(leadId) {
   );
 }
 
-export async function listLeads(filters = {}, page = 1, perPage = config.perPage) {
+export async function listLeads(filters = {}, page = 1, perPage = config.perPage, companyId = null) {
   const where = ['1=1'];
   const params = [];
+  if (companyId) { where.push('l.company_id = ?'); params.push(Number(companyId)); }
   if (filters.search) {
     const s = `%${filters.search}%`;
     where.push('(l.name LIKE ? OR l.email LIKE ? OR l.mobile LIKE ? OR l.company LIKE ?)');

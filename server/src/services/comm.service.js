@@ -253,21 +253,21 @@ export async function sendCommunication(channel, lead, template, enrollmentId = 
 
   // ── Email (SMTP) ─────────────────────────────────────────────────
   if (channel === 'email') {
-    const smtpHost = await getSetting('smtp_host');
+    const smtpHost = await getSetting('smtp_host', '', lead.company_id);
     if (!smtpHost) {
       await run("UPDATE communications SET status='failed', failed_reason='smtp_not_configured' WHERE id=?", [commId]);
       return { delivered: false, comm_id: commId, error: 'smtp_not_configured' };
     }
     try {
-      const smtpPort = await getSetting('smtp_port', '587');
+      const smtpPort = await getSetting('smtp_port', '587', lead.company_id);
       const transporter = nodemailer.createTransport({
         host: smtpHost,
         port: Number(smtpPort),
         secure: smtpPort === '465',
-        auth: { user: await getSetting('smtp_user'), pass: await getSetting('smtp_pass') }
+        auth: { user: await getSetting('smtp_user', '', lead.company_id), pass: await getSetting('smtp_pass', '', lead.company_id) }
       });
-      const from     = await getSetting('smtp_from', await getSetting('smtp_user'));
-      const fromName = await getSetting('smtp_from_name', 'Dot Domino CRM');
+      const from     = await getSetting('smtp_from', await getSetting('smtp_user', '', lead.company_id), lead.company_id);
+      const fromName = await getSetting('smtp_from_name', 'Dot Domino CRM', lead.company_id);
       const html     = injectEmailTracking(renderedBody, commId);
       const info     = await transporter.sendMail({
         from: `${fromName} <${from}>`,
@@ -287,7 +287,7 @@ export async function sendCommunication(channel, lead, template, enrollmentId = 
 
   // ── WhatsApp (Anantya.ai) ────────────────────────────────────────
   if (channel === 'whatsapp') {
-    const apiKey = await getSetting('wa_anantya_api_key');
+    const apiKey = await getSetting('wa_anantya_api_key', '', lead.company_id);
     if (!apiKey) {
       await run("UPDATE communications SET status='failed', failed_reason='anantya_wa_key_not_configured' WHERE id=?", [commId]);
       return { delivered: false, comm_id: commId, error: 'anantya_wa_key_not_configured' };
@@ -327,7 +327,7 @@ export async function sendCommunication(channel, lead, template, enrollmentId = 
 
   // ── RCS (Anantya.ai) ─────────────────────────────────────────────
   if (channel === 'rcs') {
-    const apiKey = (await getSetting('rcs_api_key')) || (await getSetting('wa_anantya_api_key'));
+    const apiKey = (await getSetting('rcs_api_key', '', lead.company_id)) || (await getSetting('wa_anantya_api_key', '', lead.company_id));
     if (!apiKey) {
       await run("UPDATE communications SET status='failed', failed_reason='anantya_rcs_key_not_configured' WHERE id=?", [commId]);
       return { delivered: false, comm_id: commId, error: 'anantya_rcs_key_not_configured' };

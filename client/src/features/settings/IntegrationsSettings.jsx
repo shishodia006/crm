@@ -90,6 +90,62 @@ const SaveBtn = ({ saving, label = 'Save', onClick }) => (
 
 const APP_URL = (import.meta.env.VITE_API_BASE || 'http://localhost:8090');
 
+function IntegrationAccounts() {
+  const toast = useToast();
+  const [accounts, setAccounts] = useState([]);
+  const [form, setForm] = useState({ name: '', provider: 'meta', channel: 'whatsapp', external_account_id: '', webhook_secret: '' });
+  const [busy, setBusy] = useState(false);
+
+  const load = useCallback(async () => {
+    try {
+      const data = await api.get('/api/settings/integration-accounts');
+      setAccounts(data?.accounts ?? []);
+    } catch (error) { toast(error.message || 'Could not load integration accounts.', 'danger'); }
+  }, [toast]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const save = async (event) => {
+    event.preventDefault();
+    setBusy(true);
+    try {
+      await api.post('/api/settings/integration-accounts', form);
+      setForm({ name: '', provider: 'meta', channel: 'whatsapp', external_account_id: '', webhook_secret: '' });
+      await load();
+      toast('Integration account created.', 'success');
+    } catch (error) { toast(error.message || 'Could not save account.', 'danger'); }
+    finally { setBusy(false); }
+  };
+
+  const remove = async (id) => {
+    if (!window.confirm('Remove this integration account?')) return;
+    try {
+      await api.delete(`/api/settings/integration-accounts/${id}`);
+      setAccounts((items) => items.filter((item) => item.id !== id));
+      toast('Integration account removed.', 'success');
+    } catch (error) { toast(error.message || 'Could not remove account.', 'danger'); }
+  };
+
+  return (
+    <Card icon="collection-fill" title="Connected Accounts" badge="Multiple per company">
+      <p className="text-muted text-12 mb-3">Add each WhatsApp, email, SMS or lead-source account separately. Every account gets an isolated webhook endpoint.</p>
+      <form className="row g-2 align-items-end mb-3" onSubmit={save}>
+        <div className="col-md-3"><Field label="Account name" name="name" value={form.name} onChange={(n, v) => setForm((p) => ({ ...p, [n]: v }))} /></div>
+        <div className="col-md-2"><Field label="Provider" name="provider" value={form.provider} onChange={(n, v) => setForm((p) => ({ ...p, [n]: v }))} /></div>
+        <div className="col-md-2"><Select label="Channel" name="channel" value={form.channel} onChange={(n, v) => setForm((p) => ({ ...p, [n]: v }))} options={[{ value: 'whatsapp', label: 'WhatsApp' }, { value: 'email', label: 'Email' }, { value: 'rcs', label: 'RCS' }, { value: 'sms', label: 'SMS' }, { value: 'lead_source', label: 'Lead source' }]} /></div>
+        <div className="col-md-2"><Field label="External account ID" name="external_account_id" value={form.external_account_id} onChange={(n, v) => setForm((p) => ({ ...p, [n]: v }))} /></div>
+        <div className="col-md-2"><Field label="Webhook secret" name="webhook_secret" type="password" value={form.webhook_secret} onChange={(n, v) => setForm((p) => ({ ...p, [n]: v }))} /></div>
+        <div className="col-md-1"><button className="btn btn-crm w-100" disabled={busy}>{busy ? '…' : 'Add'}</button></div>
+      </form>
+      {accounts.length === 0 ? <div className="text-muted text-12">No separate integration accounts added yet.</div> : (
+        <div className="table-responsive"><table className="table table-sm align-middle mb-0 text-12"><thead><tr><th>Account</th><th>Provider</th><th>Webhook URL</th><th /></tr></thead><tbody>{accounts.map((account) => (
+          <tr key={account.id}><td><strong>{account.name}</strong><div className="text-muted">{account.channel}</div></td><td>{account.provider}</td><td><code className="text-break">{`${APP_URL}/webhook/${account.provider}/${account.webhook_key}`}</code></td><td><button type="button" className="btn btn-outline-danger btn-sm" onClick={() => remove(account.id)}><i className="bi bi-trash" /></button></td></tr>
+        ))}</tbody></table></div>
+      )}
+    </Card>
+  );
+}
+
 /* ── Tabs ─────────────────────────────────────────────── */
 const TABS = [
   { id: 'email',     icon: 'envelope-fill',  label: 'Email' },
@@ -135,6 +191,8 @@ export default function IntegrationsSettings() {
   return (
     <div>
       <h5 className="fw-bold mb-4 text-brand">Integrations</h5>
+
+      <IntegrationAccounts />
 
       {/* Tab Strip */}
       <div className="crm-tabs mb-4">

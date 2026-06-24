@@ -14,6 +14,7 @@ function buildVariablesJson(rawCount, body = '') {
 export async function index(req, res) {
   const where = ['1=1'];
   const params = [];
+  where.push('t.company_id=?'); params.push(req.companyId);
   if (req.query.channel) { where.push('t.channel=?'); params.push(req.query.channel); }
   if (req.query.q) {
     where.push('(t.name LIKE ? OR t.subject LIKE ?)');
@@ -37,15 +38,15 @@ export async function store(req, res) {
   }
   const variablesJson = buildVariablesJson(req.body.variable_count, body);
   const result = await run(
-    "INSERT INTO templates (name,channel,subject,body,wa_template_id,variables,status,created_by) VALUES (?,?,?,?,?,?,?,?)",
-    [name, channel, req.body.subject || null, body, req.body.wa_template_id || null, variablesJson, req.body.status || 'active', req.user.id]
+    "INSERT INTO templates (company_id,name,channel,subject,body,wa_template_id,variables,status,created_by) VALUES (?,?,?,?,?,?,?,?,?)",
+    [req.companyId, name, channel, req.body.subject || null, body, req.body.wa_template_id || null, variablesJson, req.body.status || 'active', req.user.id]
   );
   ok(res, { id: result.insertId }, 'Template created.');
 }
 
 export async function syncWhatsApp(req, res) {
   const { getSetting } = await import('../services/settings.service.js');
-  const apiKey = req.query.key || req._anantya_override_key || await getSetting('wa_anantya_api_key');
+  const apiKey = req.query.key || req._anantya_override_key || await getSetting('wa_anantya_api_key', '', req.companyId);
   if (!apiKey) return fail(res, 'Anantya API key not configured.', 422);
 
   const response = await fetch('https://apiv1.anantya.ai/api/Campaign/GetTemplates', {
@@ -102,8 +103,8 @@ export async function syncWhatsApp(req, res) {
 
     // Upsert: if wa_template_id already exists, update; else insert
     const existing = await one(
-      "SELECT id FROM templates WHERE wa_template_id=? AND channel IN ('whatsapp','rcs') LIMIT 1",
-      [waId]
+      "SELECT id FROM templates WHERE wa_template_id=? AND channel IN ('whatsapp','rcs') AND company_id=? LIMIT 1",
+      [waId, req.companyId]
     );
     if (existing) {
       await run(
@@ -112,8 +113,8 @@ export async function syncWhatsApp(req, res) {
       );
     } else {
       await run(
-        "INSERT INTO templates (name,channel,body,wa_template_id,media_url,variables,status,created_by) VALUES (?,?,?,?,?,?,?,?)",
-        [name, 'whatsapp', body, waId, mediaUrl, variablesJson, tplStatus, req.user?.id || 1]
+        "INSERT INTO templates (company_id,name,channel,body,wa_template_id,media_url,variables,status,created_by) VALUES (?,?,?,?,?,?,?,?,?)",
+        [req.companyId, name, 'whatsapp', body, waId, mediaUrl, variablesJson, tplStatus, req.user?.id || 1]
       );
     }
     imported++;
@@ -123,7 +124,7 @@ export async function syncWhatsApp(req, res) {
 }
 
 export async function show(req, res) {
-  const template = await one('SELECT * FROM templates WHERE id=? LIMIT 1', [Number(req.params.id)]);
+  const template = await one('SELECT * FROM templates WHERE id=? AND company_id=? LIMIT 1', [Number(req.params.id), req.companyId]);
   if (!template) return fail(res, 'Template not found.', 404);
   ok(res, { template });
 }
@@ -133,16 +134,18 @@ export async function update(req, res) {
   const body = String(req.body.body || '');
   if (!name || !body) return fail(res, 'Name and body are required.', 422);
   const variablesJson = buildVariablesJson(req.body.variable_count, body);
-  await run('UPDATE templates SET name=?,subject=?,body=?,wa_template_id=?,variables=?,status=?,updated_at=NOW() WHERE id=?', [
+  await run('UPDATE templates SET name=?,subject=?,body=?,wa_template_id=?,variables=?,status=?,updated_at=NOW() WHERE id=? AND company_id=?', [
     name, req.body.subject || null, body, req.body.wa_template_id || null, variablesJson,
-    req.body.status || 'active', Number(req.params.id)
+    req.body.status || 'active', Number(req.params.id), req.companyId
   ]);
   ok(res, null, 'Template updated.');
 }
 
 export async function destroy(req, res) {
+  const template = await one('SELECT id FROM templates WHERE id=? AND company_id=? LIMIT 1', [Number(req.params.id), req.companyId]);
+  if (!template) return fail(res, 'Template not found.', 404);
   const inUse = Number(await scalar('SELECT COUNT(*) FROM workflow_steps WHERE template_id=?', [Number(req.params.id)]));
   if (inUse > 0) return fail(res, 'Template is in use by a workflow step - cannot delete.', 422);
-  await run('DELETE FROM templates WHERE id=?', [Number(req.params.id)]);
+  await run('DELETE FROM templates WHERE id=? AND company_id=?', [Number(req.params.id), req.companyId]);
   ok(res, null, 'Template deleted.');
 }

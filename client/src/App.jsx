@@ -10,6 +10,7 @@ import RegisterPage from './features/auth/RegisterPage.jsx';
 import ForgotPage from './features/auth/ForgotPage.jsx';
 import ResetPage from './features/auth/ResetPage.jsx';
 import DashboardPage from './features/dashboard/DashboardPage.jsx';
+import MasterDashboardPage from './features/dashboard/MasterDashboardPage.jsx';
 import LeadsPage from './features/leads/LeadsPage.jsx';
 import LeadDetail from './features/leads/LeadDetail.jsx';
 import LeadForm from './features/leads/LeadForm.jsx';
@@ -60,6 +61,7 @@ export default function App() {
             <Route element={<RequireAuth><Layout /></RequireAuth>}>
               <Route index element={<Navigate to="/dashboard" replace />} />
               <Route path="/dashboard" element={<DashboardPage />} />
+              <Route path="/master-dashboard" element={<MasterDashboardPage />} />
 
               {/* Leads */}
               <Route path="/leads" element={<LeadsPage />} />

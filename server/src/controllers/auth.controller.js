@@ -4,9 +4,10 @@ import { one, run } from '../db/pool.js';
 import { ok, fail } from '../utils/response.js';
 import { normalizeHash } from '../utils/helpers.js';
 import { config } from '../config/index.js';
+import { companiesForUser, createCompany } from '../services/company.service.js';
 
 export async function me(req, res) {
-  ok(res, { user: req.user, csrfToken: req.session.csrfToken, env: config.env }, 'Session loaded.');
+  ok(res, { user: req.user, company: req.company || null, companies: req.user ? await companiesForUser(req.user) : [], csrfToken: req.session.csrfToken, env: config.env }, 'Session loaded.');
 }
 
 export async function login(req, res) {
@@ -23,7 +24,9 @@ export async function login(req, res) {
     req.session.csrfToken = crypto.randomBytes(32).toString('hex');
     await run('UPDATE users SET last_login_at=NOW() WHERE id=?', [user.id]);
     delete user.password;
-    ok(res, { user, csrfToken: req.session.csrfToken }, 'Logged in.');
+    const companies = await companiesForUser(user);
+    if (companies.length) req.session.companyId = companies[0].id;
+    ok(res, { user, company: companies[0] || null, companies, csrfToken: req.session.csrfToken }, 'Logged in.');
   });
 }
 
@@ -51,15 +54,15 @@ export async function register(req, res) {
   );
   const userId = Number(result.insertId);
 
-  // Save company name as app setting if provided and first user
-  if (company && role === 'superadmin') {
-    await run("INSERT INTO settings (`key`,`value`,`group`) VALUES ('app_name',?,'general') ON DUPLICATE KEY UPDATE `value`=?", [company, company]);
-  }
+  // Every new account owns an initial workspace. Existing installations use
+  // database/migrations/001_multicompany.sql to create their Default Workspace.
+  const workspace = await createCompany({ name: company || `${name}'s Company`, userId });
 
   // Auto login after register
   req.session.regenerate(async (err) => {
     if (err) return fail(res, 'Registration succeeded but could not start session.', 500);
     req.session.userId = userId;
+    req.session.companyId = workspace.id;
     req.session.csrfToken = crypto.randomBytes(32).toString('hex');
     ok(res, { csrfToken: req.session.csrfToken }, 'Account created! Welcome to Dot Domino CRM.');
   });

@@ -45,6 +45,7 @@ const NAV_SECTIONS = [
   ]},
 ];
 const ADMIN_ITEMS = [
+  { to: '/master-dashboard', icon: 'buildings-fill',    label: 'Master Dashboard' },
   { to: '/settings',     icon: 'gear-fill',         label: 'Settings' },
   { to: '/integrations', icon: 'plug-fill',         label: 'Integrations' },
   { to: '/users',        icon: 'person-badge-fill', label: 'Users' },
@@ -122,6 +123,45 @@ function LeadSearch() {
           )}
         </div>
       )}
+    </div>
+  );
+}
+
+function CompanySwitcher() {
+  const { company, companies, switchCompany } = useAuth();
+  const toast = useToast();
+  const navigate = useNavigate();
+
+  if (!company || companies.length < 2) {
+    return company ? <span className="text-muted text-12 text-truncate" title={company.name}>{company.name}</span> : null;
+  }
+
+  const selectCompany = async (companyId) => {
+    if (Number(companyId) === Number(company.id)) return;
+    try {
+      await switchCompany(companyId);
+      navigate('/dashboard');
+      window.location.reload();
+    } catch (error) {
+      toast(error.message || 'Could not switch company.', 'danger');
+    }
+  };
+
+  return (
+    <div className="dropdown">
+      <button className="btn btn-sm btn-outline-secondary dropdown-toggle text-truncate" style={{ maxWidth: 190 }} data-bs-toggle="dropdown">
+        <i className="bi bi-buildings me-1" />{company.name}
+      </button>
+      <ul className="dropdown-menu shadow-sm" style={{ minWidth: 220 }}>
+        {companies.map((item) => (
+          <li key={item.id}>
+            <button className={`dropdown-item d-flex align-items-center justify-content-between gap-2 ${Number(item.id) === Number(company.id) ? 'active' : ''}`} onClick={() => selectCompany(item.id)}>
+              <span className="text-truncate">{item.name}</span>
+              {Number(item.id) === Number(company.id) && <i className="bi bi-check-lg" />}
+            </button>
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }
@@ -335,6 +375,8 @@ export default function Layout() {
             <i className={`bi bi-${pageTitle.icon} crm-page-title-icon`} />
             <span className="crm-page-title-text">{pageTitle.label}</span>
           </div>
+
+          <CompanySwitcher />
 
           <LeadSearch />
 

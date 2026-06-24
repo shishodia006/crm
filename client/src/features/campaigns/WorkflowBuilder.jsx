@@ -28,6 +28,7 @@ const STEP_META = {
   assign_agent:  { label: 'Assign Agent',   icon: 'person-check',   color: '#7c3aed' },
   task:          { label: 'Create Task',    icon: 'check2-square',  color: '#0891b2' },
   move_pipeline: { label: 'Move Pipeline',  icon: 'kanban',         color: '#db2777' },
+  tag_lead:      { label: 'Add Tag',        icon: 'tag',            color: '#ea580c' },
   exit:          { label: 'Exit',           icon: 'x-circle',       color: '#dc2626' },
 };
 
@@ -44,6 +45,7 @@ const STEP_INFO = {
   assign_agent:  'The lead is assigned to a team member or auto-distributed via round robin.',
   task:          'A follow-up task is created so no lead is missed.',
   move_pipeline: 'The lead is moved to a different pipeline stage automatically.',
+  tag_lead:      'Adds a behavior tag to the lead, such as Hot Lead or Not Interested.',
   exit:          'The lead exits the workflow. No more steps will run for them.',
 };
 
@@ -125,11 +127,14 @@ function makeNodeData(type, overrides = {}) {
     agent_id: '',
     task_title: '',
     pipeline_stage: '',
+    tag_name: '',
     // multi_send channel template ids
     email_template_id: '',
     whatsapp_template_id: '',
     rcs_template_id: '',
     sms_template_id: '',
+    fallback_channels: [],
+    ab_template_id: '',
     ...overrides,
   };
 }
@@ -153,10 +158,13 @@ function dbToFlowNodes(workflowSteps) {
         agent_id: String(ad.agent_id ?? ''),
         task_title: ad.task_title || '',
         pipeline_stage: String(ad.pipeline_stage ?? ''),
+        tag_name: ad.tag_name || '',
         email_template_id: String(ad.email_template_id ?? ''),
         whatsapp_template_id: String(ad.whatsapp_template_id ?? ''),
         rcs_template_id: String(ad.rcs_template_id ?? ''),
         sms_template_id: String(ad.sms_template_id ?? ''),
+        fallback_channels: Array.isArray(ad.fallback_channels) ? ad.fallback_channels : [],
+        ab_template_id: String(ad.ab_template_id ?? ''),
       }),
     };
   });
@@ -565,6 +573,33 @@ function NodeConfigPanel({ node, onClose, onChange, msgTemplates, setMsgTemplate
           );
         })()}
 
+        {isComm && filteredTpls.length > 1 && (
+          <div style={{ marginBottom: 12, padding: '9px 10px', border: '1px solid #ddd6fe', borderRadius: 6, background: '#faf5ff' }}>
+            <label style={{ fontSize: 11, fontWeight: 700, color: '#5b21b6', display: 'block', marginBottom: 4 }}><i className="bi bi-bezier2 me-1" />A/B test — Template B (50%)</label>
+            <select className="form-select form-select-sm" value={data.ab_template_id} onChange={e => onChange('ab_template_id', e.target.value)}>
+              <option value="">Disabled — send Template A to everyone</option>
+              {filteredTpls.filter((template) => String(template.id) !== String(data.template_id)).map((template) => <option key={template.id} value={template.id}>{template.name}</option>)}
+            </select>
+            <div style={{ fontSize: 10, color: '#6b7280', marginTop: 4 }}>Contacts split evenly and stay on the same variant for this step.</div>
+          </div>
+        )}
+
+        {isComm && data.stepType !== 'email' && (
+          <div style={{ marginBottom: 12, padding: '9px 10px', border: '1px solid #e2e8f0', borderRadius: 6, background: '#f8fafc' }}>
+            <label style={{ fontSize: 11, fontWeight: 700, color: '#374151', display: 'block', marginBottom: 5 }}>Fallback order if delivery fails</label>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              {['email', 'whatsapp', 'rcs', 'sms'].filter((channel) => channel !== data.stepType).map((channel) => (
+                <label key={channel} style={{ fontSize: 11, textTransform: 'capitalize' }}>
+                  <input type="checkbox" className="form-check-input me-1" checked={data.fallback_channels?.includes(channel)}
+                    onChange={(e) => onChange('fallback_channels', e.target.checked ? [...(data.fallback_channels || []), channel] : (data.fallback_channels || []).filter((item) => item !== channel))} />
+                  {channel}
+                </label>
+              ))}
+            </div>
+            <div style={{ fontSize: 10, color: '#64748b', marginTop: 4 }}>Selected channels are attempted left-to-right in the order shown.</div>
+          </div>
+        )}
+
         {/* Condition */}
         {data.stepType === 'condition' && (
           <>
@@ -572,6 +607,8 @@ function NodeConfigPanel({ node, onClose, onChange, msgTemplates, setMsgTemplate
               <label style={{ fontSize: 11, fontWeight: 700, color: '#374151', display: 'block', marginBottom: 4 }}>Check Field</label>
               <select className="form-select form-select-sm" value={data.condition}
                 onChange={e => onChange('condition', e.target.value)}>
+                <option value="engagement_event">Message engagement event</option>
+                <option value="reply_keyword">Reply keyword</option>
                 <option value="">— Select —</option>
                 <option value="tag">Has Tag</option>
                 <option value="score">Lead Score</option>
@@ -592,9 +629,22 @@ function NodeConfigPanel({ node, onClose, onChange, msgTemplates, setMsgTemplate
               </div>
               <div style={{ flex: 1 }}>
                 <label style={{ fontSize: 11, fontWeight: 700, color: '#374151', display: 'block', marginBottom: 4 }}>Value</label>
-                <input className="form-control form-control-sm" value={data.condition_val}
-                  onChange={e => onChange('condition_val', e.target.value)}
-                  placeholder="e.g. contract_signed" />
+                {data.condition === 'engagement_event' ? (
+                  <select className="form-select form-select-sm" value={data.condition_val}
+                    onChange={e => onChange('condition_val', e.target.value)}>
+                    <option value="">â€” Select event â€”</option>
+                    <option value="delivered">Delivered</option>
+                    <option value="read">Read</option>
+                    <option value="opened">Opened</option>
+                    <option value="clicked">Clicked</option>
+                    <option value="replied">Replied</option>
+                    <option value="failed">Failed</option>
+                  </select>
+                ) : (
+                  <input className="form-control form-control-sm" value={data.condition_val}
+                    onChange={e => onChange('condition_val', e.target.value)}
+                    placeholder={data.condition === 'reply_keyword' ? 'e.g. yes, book demo' : 'e.g. contract_signed'} />
+                )}
               </div>
             </div>
             <div style={{ display: 'flex', gap: 6, marginBottom: 4 }}>
@@ -639,6 +689,13 @@ function NodeConfigPanel({ node, onClose, onChange, msgTemplates, setMsgTemplate
               <option value="">— Select Stage —</option>
               {stages.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
             </select>
+          </div>
+        )}
+
+        {data.stepType === 'tag_lead' && (
+          <div style={{ marginBottom: 12 }}>
+            <label style={{ fontSize: 11, fontWeight: 700, color: '#374151', display: 'block', marginBottom: 4 }}>Tag name</label>
+            <input className="form-control form-control-sm" value={data.tag_name} onChange={e => onChange('tag_name', e.target.value)} placeholder="e.g. Hot Lead" />
           </div>
         )}
       </div>
@@ -748,6 +805,9 @@ function BuilderCanvas({ initialNodes, initialEdges, msgTemplates, setMsgTemplat
           agent_id: d.agent_id ? Number(d.agent_id) : null,
           task_title: d.task_title || '',
           pipeline_stage: d.pipeline_stage ? Number(d.pipeline_stage) : null,
+          tag_name: d.tag_name || '',
+          fallback_channels: Array.isArray(d.fallback_channels) ? d.fallback_channels : [],
+          ab_template_id: d.ab_template_id ? Number(d.ab_template_id) : null,
           x: Math.round(n.position.x),
           y: Math.round(n.position.y),
           step_order: i + 1,
@@ -759,6 +819,11 @@ function BuilderCanvas({ initialNodes, initialEdges, msgTemplates, setMsgTemplat
             rcs_template_id:      d.rcs_template_id      ? Number(d.rcs_template_id)      : null,
             sms_template_id:      d.sms_template_id      ? Number(d.sms_template_id)      : null,
           };
+        }
+        if (['email','whatsapp','rcs','sms'].includes(d.stepType)) {
+          base.action_data = { ...(base.action_data || {}), fallback_channels: base.fallback_channels, ab_template_id: base.ab_template_id };
+          delete base.fallback_channels;
+          delete base.ab_template_id;
         }
         return base;
       });

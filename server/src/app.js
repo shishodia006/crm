@@ -4,6 +4,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { config } from './config/index.js';
 import { currentUser } from './middleware/auth.js';
+import { currentCompany } from './middleware/company.js';
 import { validateCsrf } from './middleware/csrf.js';
 import routes from './routes/index.js';
 
@@ -68,6 +69,7 @@ export function createApp() {
 
   // Attach current user to req
   app.use(currentUser);
+  app.use(currentCompany);
 
   // CSRF validation for mutating API routes
   app.use('/api', validateCsrf);

@@ -9,6 +9,7 @@ const adminOnly = requireRoles('admin', 'superadmin');
 // Lead ingest & webhooks (no auth)
 router.post('/ingest/:source', asyncRoute(pub.ingest));
 router.all('/webhook/:source', asyncRoute(pub.webhook));
+router.all('/webhook/:source/:webhookKey', asyncRoute(pub.webhook));
 
 // Email tracking pixels (no auth)
 router.get('/track/open/:uid', asyncRoute(pub.trackOpen));
