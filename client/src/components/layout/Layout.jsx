@@ -49,6 +49,7 @@ const ADMIN_ITEMS = [
   { to: '/settings',     icon: 'gear-fill',         label: 'Settings' },
   { to: '/integrations', icon: 'plug-fill',         label: 'Integrations' },
   { to: '/users',        icon: 'person-badge-fill', label: 'Users' },
+  { to: '/ai-agents',    icon: 'robot',             label: 'AI Agents' },
 ];
 
 /* ── Lead Search ────────────────────────────────────────── */

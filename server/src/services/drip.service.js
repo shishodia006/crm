@@ -282,7 +282,8 @@ async function sendWithFallback(primary, lead, template, enrollment, step, actio
     .map((channel) => String(channel).toLowerCase()).filter((channel) => ['email','whatsapp','rcs','sms'].includes(channel) && channel !== primary))];
   const result = { executed_at: new Date().toISOString(), fallback_order: channels };
   for (const channel of channels) {
-    const send = await sendCommunication(channel, lead, template, enrollment.enrollment_id, step.id);
+    const accountId = channel === primary ? actionData.integration_account_id : null;
+    const send = await sendCommunication(channel, lead, template, enrollment.enrollment_id, step.id, accountId);
     result[channel] = send;
     if (send.delivered) break;
   }

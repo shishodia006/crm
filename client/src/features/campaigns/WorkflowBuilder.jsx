@@ -135,6 +135,7 @@ function makeNodeData(type, overrides = {}) {
     sms_template_id: '',
     fallback_channels: [],
     ab_template_id: '',
+    integration_account_id: '',
     ...overrides,
   };
 }
@@ -165,6 +166,7 @@ function dbToFlowNodes(workflowSteps) {
         sms_template_id: String(ad.sms_template_id ?? ''),
         fallback_channels: Array.isArray(ad.fallback_channels) ? ad.fallback_channels : [],
         ab_template_id: String(ad.ab_template_id ?? ''),
+        integration_account_id: String(ad.integration_account_id ?? ''),
       }),
     };
   });
@@ -366,7 +368,7 @@ const ConditionNode = memo(({ data, selected }) => {
 const NODE_TYPES = { stepNode: StepNode, conditionNode: ConditionNode };
 
 // ─── Node Config Panel ─────────────────────────────────────────────
-function NodeConfigPanel({ node, onClose, onChange, msgTemplates, setMsgTemplates, agents, stages }) {
+function NodeConfigPanel({ node, onClose, onChange, msgTemplates, setMsgTemplates, agents, stages, integrationAccounts = [] }) {
   const data = node.data;
   const meta = STEP_META[data.stepType] ?? { label: data.stepType, icon: 'circle', color: '#6b7280' };
   const isComm = ['email', 'whatsapp', 'sms', 'rcs'].includes(data.stepType);
@@ -517,6 +519,15 @@ function NodeConfigPanel({ node, onClose, onChange, msgTemplates, setMsgTemplate
                   })()}
                 </div>
                 {selectedTpl.body}
+              </div>
+            )}
+            {integrationAccounts.some((account) => account.channel === data.stepType || account.channel === 'other') && (
+              <div style={{ marginTop: 9 }}>
+                <label style={{ fontSize: 11, fontWeight: 700, color: '#374151', display: 'block', marginBottom: 4 }}>Send from account</label>
+                <select className="form-select form-select-sm" value={data.integration_account_id} onChange={e => onChange('integration_account_id', e.target.value)}>
+                  <option value="">Company default account</option>
+                  {integrationAccounts.filter((account) => account.channel === data.stepType || account.channel === 'other').map((account) => <option key={account.id} value={account.id}>{account.name} · {account.provider}</option>)}
+                </select>
               </div>
             )}
           </div>
@@ -704,7 +715,7 @@ function NodeConfigPanel({ node, onClose, onChange, msgTemplates, setMsgTemplate
 }
 
 // ─── Builder Canvas (inner — must be inside ReactFlowProvider) ─────
-function BuilderCanvas({ initialNodes, initialEdges, msgTemplates, setMsgTemplates, agents, stages, onBack, onSave }) {
+function BuilderCanvas({ initialNodes, initialEdges, msgTemplates, setMsgTemplates, agents, stages, integrationAccounts, onBack, onSave }) {
   const wrapperRef = useRef(null);
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
@@ -808,6 +819,7 @@ function BuilderCanvas({ initialNodes, initialEdges, msgTemplates, setMsgTemplat
           tag_name: d.tag_name || '',
           fallback_channels: Array.isArray(d.fallback_channels) ? d.fallback_channels : [],
           ab_template_id: d.ab_template_id ? Number(d.ab_template_id) : null,
+          integration_account_id: d.integration_account_id ? Number(d.integration_account_id) : null,
           x: Math.round(n.position.x),
           y: Math.round(n.position.y),
           step_order: i + 1,
@@ -821,9 +833,10 @@ function BuilderCanvas({ initialNodes, initialEdges, msgTemplates, setMsgTemplat
           };
         }
         if (['email','whatsapp','rcs','sms'].includes(d.stepType)) {
-          base.action_data = { ...(base.action_data || {}), fallback_channels: base.fallback_channels, ab_template_id: base.ab_template_id };
+          base.action_data = { ...(base.action_data || {}), fallback_channels: base.fallback_channels, ab_template_id: base.ab_template_id, integration_account_id: base.integration_account_id };
           delete base.fallback_channels;
           delete base.ab_template_id;
+          delete base.integration_account_id;
         }
         return base;
       });
@@ -968,6 +981,7 @@ function BuilderCanvas({ initialNodes, initialEdges, msgTemplates, setMsgTemplat
             setMsgTemplates={setMsgTemplates}
             agents={agents}
             stages={stages}
+            integrationAccounts={integrationAccounts}
           />
         )}
       </div>
@@ -1006,6 +1020,7 @@ export default function WorkflowBuilder() {
   const [msgTemplates, setMsgTemplates] = useState([]);
   const [agents, setAgents] = useState([]);
   const [stages, setStages] = useState([]);
+  const [integrationAccounts, setIntegrationAccounts] = useState([]);
   const [view, setView] = useState('templates');
   const [loading, setLoading] = useState(true);
   const [previewTpl, setPreviewTpl] = useState(null);
@@ -1021,6 +1036,7 @@ export default function WorkflowBuilder() {
         setMsgTemplates(d.templates ?? []);
         setAgents(d.agents ?? []);
         setStages(d.stages ?? []);
+        setIntegrationAccounts(d.integrationAccounts ?? []);
         const ws = d.workflowSteps ?? [];
         if (ws.length > 0) {
           setInitialNodes(dbToFlowNodes(ws));
@@ -1303,6 +1319,7 @@ export default function WorkflowBuilder() {
           setMsgTemplates={setMsgTemplates}
           agents={agents}
           stages={stages}
+          integrationAccounts={integrationAccounts}
           onBack={() => setView('templates')}
           onSave={handleSave}
         />

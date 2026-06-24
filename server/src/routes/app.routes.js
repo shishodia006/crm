@@ -3,7 +3,7 @@ import multer from 'multer';
 import path from 'path';
 import { asyncRoute } from '../utils/response.js';
 import { requireAuth, requireRoles } from '../middleware/auth.js';
-import { requireCompany, selectCompany } from '../middleware/company.js';
+import { requireCompany, requireCompanyRole, selectCompany } from '../middleware/company.js';
 import { config } from '../config/index.js';
 import * as leads from '../controllers/leads.controller.js';
 import * as campaigns from '../controllers/campaigns.controller.js';
@@ -15,6 +15,7 @@ import * as settings from '../controllers/settings.controller.js';
 import * as dashboard from '../controllers/dashboard.controller.js';
 import * as notifications from '../controllers/notifications.controller.js';
 import * as companies from '../controllers/companies.controller.js';
+import * as aiAgents from '../controllers/ai_agents.controller.js';
 
 const router = Router();
 const upload = multer({
@@ -46,26 +47,26 @@ router.use(requireAuth, requireCompany);
 
 // Leads
 router.get('/leads', requireAuth, asyncRoute(leads.index));
-router.post('/leads', requireAuth, asyncRoute(leads.store));
+router.post('/leads', requireAuth, requireCompanyRole('agent'), asyncRoute(leads.store));
 router.get('/leads/export', requireAuth, asyncRoute(leads.exportCsv));
 router.post('/leads/import', requireAuth, upload.single('csv'), asyncRoute(leads.importCsv));
 router.get('/leads/:id', requireAuth, asyncRoute(leads.show));
-router.patch('/leads/:id', requireAuth, asyncRoute(leads.update));
+router.patch('/leads/:id', requireAuth, requireCompanyRole('agent'), asyncRoute(leads.update));
 router.delete('/leads/:id', adminOnly, asyncRoute(leads.destroy));
-router.post('/leads/:id/enroll', requireAuth, asyncRoute(leads.enroll));
+router.post('/leads/:id/enroll', requireAuth, requireCompanyRole('agent'), asyncRoute(leads.enroll));
 router.post('/leads/:id/score', requireAuth, asyncRoute(leads.addScore));
 router.get('/leads/:id/timeline', requireAuth, asyncRoute(leads.timeline));
 router.get('/leads/:id/enrollments/:eid', requireAuth, asyncRoute(leads.enrollmentDetail));
 
 // Campaigns
 router.get('/campaigns', requireAuth, asyncRoute(campaigns.index));
-router.post('/campaigns', adminOnly, asyncRoute(campaigns.store));
+router.post('/campaigns', adminOnly, requireCompanyRole('manager'), asyncRoute(campaigns.store));
 router.get('/campaigns/:id', requireAuth, asyncRoute(campaigns.show));
-router.patch('/campaigns/:id', adminOnly, asyncRoute(campaigns.update));
-router.post('/campaigns/:id/activate', adminOnly, asyncRoute(campaigns.activate));
-router.post('/campaigns/:id/pause', adminOnly, asyncRoute(campaigns.pause));
+router.patch('/campaigns/:id', adminOnly, requireCompanyRole('manager'), asyncRoute(campaigns.update));
+router.post('/campaigns/:id/activate', adminOnly, requireCompanyRole('manager'), asyncRoute(campaigns.activate));
+router.post('/campaigns/:id/pause', adminOnly, requireCompanyRole('manager'), asyncRoute(campaigns.pause));
 router.get('/campaigns/:id/builder', adminOnly, asyncRoute(campaigns.builder));
-router.post('/campaigns/:id/steps', adminOnly, asyncRoute(campaigns.saveSteps));
+router.post('/campaigns/:id/steps', adminOnly, requireCompanyRole('manager'), asyncRoute(campaigns.saveSteps));
 
 // Pipeline
 router.get('/pipeline', requireAuth, asyncRoute(pipeline.pipelineBoard));
@@ -109,6 +110,12 @@ router.post('/settings/integrations', adminOnly, asyncRoute(settings.saveIntegra
 router.get('/settings/integration-accounts', adminOnly, asyncRoute(settings.integrationAccounts));
 router.post('/settings/integration-accounts', adminOnly, asyncRoute(settings.saveIntegrationAccount));
 router.delete('/settings/integration-accounts/:id', adminOnly, asyncRoute(settings.deleteIntegrationAccount));
+router.get('/settings/ai-agents', adminOnly, asyncRoute(aiAgents.index));
+router.post('/settings/ai-agents', adminOnly, asyncRoute(aiAgents.store));
+router.patch('/settings/ai-agents/:id', adminOnly, asyncRoute(aiAgents.update));
+router.get('/settings/ai-agents/:id/knowledge', adminOnly, asyncRoute(aiAgents.knowledge));
+router.post('/settings/ai-agents/:id/knowledge', adminOnly, asyncRoute(aiAgents.saveKnowledge));
+router.post('/settings/ai-agents/:id/preview', adminOnly, asyncRoute(aiAgents.preview));
 router.get('/settings/sources', adminOnly, asyncRoute(settings.getSources));
 router.get('/settings/pipeline', adminOnly, asyncRoute(settings.getPipelineStages));
 router.post('/settings/pipeline', adminOnly, asyncRoute(settings.savePipelineStages));

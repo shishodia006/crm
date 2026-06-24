@@ -30,6 +30,7 @@ import UsersSettings from './features/settings/UsersSettings.jsx';
 import IntegrationsSettings from './features/settings/IntegrationsSettings.jsx';
 import SourcesSettings from './features/settings/SourcesSettings.jsx';
 import PipelineSettings from './features/settings/PipelineSettings.jsx';
+import AiAgentsSettings from './features/settings/AiAgentsSettings.jsx';
 
 function RequireAuth({ children }) {
   const { user } = useAuth();
@@ -94,6 +95,7 @@ export default function App() {
               {/* Standalone admin pages */}
               <Route path="/integrations" element={<IntegrationsSettings />} />
               <Route path="/users" element={<UsersSettings />} />
+              <Route path="/ai-agents" element={<AiAgentsSettings />} />
               <Route path="/revenue" element={<ReportsPage />} />
 
               {/* Settings */}

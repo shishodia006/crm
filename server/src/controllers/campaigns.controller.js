@@ -106,13 +106,14 @@ export async function pause(req, res) {
 export async function builder(req, res) {
   const campaign = await one('SELECT * FROM campaigns WHERE id=? AND company_id=? LIMIT 1', [Number(req.params.id), req.companyId]);
   if (!campaign) return fail(res, 'Campaign not found.', 404);
-  const [templates, agents, stages, workflowSteps] = await Promise.all([
+  const [templates, agents, stages, workflowSteps, integrationAccounts] = await Promise.all([
     q("SELECT id,name,channel,subject,body,wa_template_id FROM templates WHERE status!='archived' AND company_id=? ORDER BY channel,name", [req.companyId]),
     q("SELECT id,name FROM users WHERE role IN ('agent','manager') AND is_active=1 ORDER BY name"),
     q('SELECT id,name FROM pipeline_stages WHERE is_active=1 ORDER BY stage_order'),
-    q('SELECT * FROM workflow_steps WHERE campaign_id=? ORDER BY step_order ASC', [campaign.id])
+    q('SELECT * FROM workflow_steps WHERE campaign_id=? ORDER BY step_order ASC', [campaign.id]),
+    q('SELECT id,name,provider,channel,external_account_id FROM integration_accounts WHERE company_id=? AND is_active=1 ORDER BY provider,name', [req.companyId])
   ]);
-  ok(res, { campaign, templates, agents, stages, workflowSteps });
+  ok(res, { campaign, templates, agents, stages, workflowSteps, integrationAccounts });
 }
 
 export async function saveSteps(req, res) {
@@ -143,6 +144,7 @@ export async function saveSteps(req, res) {
         stage_id: step.pipeline_stage || null, pipeline_stage: step.pipeline_stage || null,
         title: step.task_title || '', task_title: step.task_title || '',
         tag_name: String(step.tag_name || '').trim(),
+        integration_account_id: step.integration_account_id ? Number(step.integration_account_id) : null,
         x: Number(step.x || 0), y: Number(step.y || 0),
         ...extraAd,
       };

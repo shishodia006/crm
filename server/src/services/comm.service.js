@@ -1,5 +1,5 @@
 import nodemailer from 'nodemailer';
-import { run } from '../db/pool.js';
+import { one, run } from '../db/pool.js';
 import { config } from '../config/index.js';
 import { trackingUid } from '../utils/crypto.js';
 import { getSetting } from './settings.service.js';
@@ -37,6 +37,17 @@ function normalizePhone(mobile) {
   if (digits.startsWith('91') && digits.length === 12) return digits;
   if (digits.length === 10) return `91${digits}`;
   return digits;
+}
+
+async function getIntegrationAccount(accountId, companyId, channel) {
+  const account = await one(
+    'SELECT * FROM integration_accounts WHERE id=? AND company_id=? AND is_active=1 LIMIT 1',
+    [Number(accountId), Number(companyId)]
+  );
+  if (!account) return null;
+  if (account.channel !== channel && account.channel !== 'other') return null;
+  try { account.config = typeof account.config === 'string' ? JSON.parse(account.config || '{}') : (account.config || {}); } catch { account.config = {}; }
+  return account;
 }
 
 // In-memory cache: waTemplateId → variable count
@@ -226,7 +237,8 @@ async function sendAnantya(channel, apiKey, to, anantya_template_id, variables =
 
 // ─── Main send function ───────────────────────────────────────────
 
-export async function sendCommunication(channel, lead, template, enrollmentId = null, stepId = null) {
+export async function sendCommunication(channel, lead, template, enrollmentId = null, stepId = null, integrationAccountId = null) {
+  const account = integrationAccountId ? await getIntegrationAccount(integrationAccountId, lead.company_id, channel) : null;
   const destination = channel === 'email' ? lead.email : lead.mobile;
   if (!destination) {
     return { delivered: false, comm_id: null, error: channel === 'email' ? 'no_email_address' : 'no_mobile' };
@@ -236,8 +248,8 @@ export async function sendCommunication(channel, lead, template, enrollmentId = 
   const subject = channel === 'email' ? renderTemplate(template?.subject || '', lead) : null;
 
   const result = await run(
-    `INSERT INTO communications (lead_id,enrollment_id,step_id,channel,template_id,to_address,subject,body_rendered,status) VALUES (?,?,?,?,?,?,?,?,?)`,
-    [lead.id, enrollmentId, stepId, channel, template?.id || null, destination, subject, renderedBody, 'queued']
+    `INSERT INTO communications (lead_id,enrollment_id,step_id,integration_account_id,channel,template_id,to_address,subject,body_rendered,status) VALUES (?,?,?,?,?,?,?,?,?,?)`,
+    [lead.id, enrollmentId, stepId, account?.id || null, channel, template?.id || null, destination, subject, renderedBody, 'queued']
   );
   const commId = Number(result.insertId);
 
@@ -253,21 +265,21 @@ export async function sendCommunication(channel, lead, template, enrollmentId = 
 
   // ── Email (SMTP) ─────────────────────────────────────────────────
   if (channel === 'email') {
-    const smtpHost = await getSetting('smtp_host', '', lead.company_id);
+    const smtpHost = account?.config?.smtp_host || await getSetting('smtp_host', '', lead.company_id);
     if (!smtpHost) {
       await run("UPDATE communications SET status='failed', failed_reason='smtp_not_configured' WHERE id=?", [commId]);
       return { delivered: false, comm_id: commId, error: 'smtp_not_configured' };
     }
     try {
-      const smtpPort = await getSetting('smtp_port', '587', lead.company_id);
+      const smtpPort = account?.config?.smtp_port || await getSetting('smtp_port', '587', lead.company_id);
       const transporter = nodemailer.createTransport({
         host: smtpHost,
         port: Number(smtpPort),
         secure: smtpPort === '465',
-        auth: { user: await getSetting('smtp_user', '', lead.company_id), pass: await getSetting('smtp_pass', '', lead.company_id) }
+        auth: { user: account?.config?.smtp_user || await getSetting('smtp_user', '', lead.company_id), pass: account?.config?.smtp_pass || await getSetting('smtp_pass', '', lead.company_id) }
       });
-      const from     = await getSetting('smtp_from', await getSetting('smtp_user', '', lead.company_id), lead.company_id);
-      const fromName = await getSetting('smtp_from_name', 'Dot Domino CRM', lead.company_id);
+      const from     = account?.config?.smtp_from || await getSetting('smtp_from', await getSetting('smtp_user', '', lead.company_id), lead.company_id);
+      const fromName = account?.config?.smtp_from_name || await getSetting('smtp_from_name', 'Dot Domino CRM', lead.company_id);
       const html     = injectEmailTracking(renderedBody, commId);
       const info     = await transporter.sendMail({
         from: `${fromName} <${from}>`,
@@ -287,7 +299,7 @@ export async function sendCommunication(channel, lead, template, enrollmentId = 
 
   // ── WhatsApp (Anantya.ai) ────────────────────────────────────────
   if (channel === 'whatsapp') {
-    const apiKey = await getSetting('wa_anantya_api_key', '', lead.company_id);
+    const apiKey = account?.config?.api_key || await getSetting('wa_anantya_api_key', '', lead.company_id);
     if (!apiKey) {
       await run("UPDATE communications SET status='failed', failed_reason='anantya_wa_key_not_configured' WHERE id=?", [commId]);
       return { delivered: false, comm_id: commId, error: 'anantya_wa_key_not_configured' };
@@ -327,7 +339,7 @@ export async function sendCommunication(channel, lead, template, enrollmentId = 
 
   // ── RCS (Anantya.ai) ─────────────────────────────────────────────
   if (channel === 'rcs') {
-    const apiKey = (await getSetting('rcs_api_key', '', lead.company_id)) || (await getSetting('wa_anantya_api_key', '', lead.company_id));
+    const apiKey = account?.config?.api_key || (await getSetting('rcs_api_key', '', lead.company_id)) || (await getSetting('wa_anantya_api_key', '', lead.company_id));
     if (!apiKey) {
       await run("UPDATE communications SET status='failed', failed_reason='anantya_rcs_key_not_configured' WHERE id=?", [commId]);
       return { delivered: false, comm_id: commId, error: 'anantya_rcs_key_not_configured' };
@@ -361,6 +373,32 @@ export async function sendCommunication(channel, lead, template, enrollmentId = 
     } catch (err) {
       await run("UPDATE communications SET status='failed', failed_reason=? WHERE id=?", [String(err.message).slice(0, 500), commId]);
       return { delivered: false, comm_id: commId, error: err.message };
+    }
+  }
+
+  // ── SMS (configurable HTTP adapter) ───────────────────────────────
+  if (channel === 'sms') {
+    const apiUrl = account?.config?.send_url || await getSetting('sms_api_url', '', lead.company_id);
+    const apiKey = account?.config?.api_key || await getSetting('sms_api_key', '', lead.company_id);
+    const sender = account?.config?.sender || await getSetting('sms_sender', '', lead.company_id);
+    if (!apiUrl || !apiKey || !sender) {
+      await run("UPDATE communications SET status='failed', failed_reason='sms_provider_not_configured' WHERE id=?", [commId]);
+      return { delivered: false, comm_id: commId, error: 'sms_provider_not_configured' };
+    }
+    try {
+      const response = await fetch(apiUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}`, ...(account?.config?.headers || {}) },
+        body: JSON.stringify({ to: normalizePhone(lead.mobile), from: sender, message: renderedBody, template_id: template?.wa_template_id || null })
+      });
+      const raw = await response.text(); let payload = {}; try { payload = JSON.parse(raw); } catch {}
+      const messageId = payload.message_id || payload.id || payload.data?.id || null;
+      if (!response.ok) throw new Error(payload.message || raw.slice(0, 300) || `HTTP ${response.status}`);
+      await run("UPDATE communications SET status='sent', provider='sms_http', provider_msg_id=?, sent_at=NOW() WHERE id=?", [messageId, commId]);
+      return { delivered: true, comm_id: commId, provider_msg_id: messageId, error: null };
+    } catch (error) {
+      await run("UPDATE communications SET status='failed', failed_reason=? WHERE id=?", [String(error.message).slice(0, 500), commId]);
+      return { delivered: false, comm_id: commId, error: error.message };
     }
   }
 

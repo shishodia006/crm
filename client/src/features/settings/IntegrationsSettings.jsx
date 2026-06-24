@@ -93,7 +93,7 @@ const APP_URL = (import.meta.env.VITE_API_BASE || 'http://localhost:8090');
 function IntegrationAccounts() {
   const toast = useToast();
   const [accounts, setAccounts] = useState([]);
-  const [form, setForm] = useState({ name: '', provider: 'meta', channel: 'whatsapp', external_account_id: '', webhook_secret: '' });
+  const [form, setForm] = useState({ name: '', provider: 'meta', channel: 'whatsapp', external_account_id: '', webhook_secret: '', config_text: '{}' });
   const [busy, setBusy] = useState(false);
 
   const load = useCallback(async () => {
@@ -109,8 +109,10 @@ function IntegrationAccounts() {
     event.preventDefault();
     setBusy(true);
     try {
-      await api.post('/api/settings/integration-accounts', form);
-      setForm({ name: '', provider: 'meta', channel: 'whatsapp', external_account_id: '', webhook_secret: '' });
+      let config = {};
+      try { config = JSON.parse(form.config_text || '{}'); } catch { toast('Account configuration must be valid JSON.', 'danger'); setBusy(false); return; }
+      await api.post('/api/settings/integration-accounts', { ...form, config });
+      setForm({ name: '', provider: 'meta', channel: 'whatsapp', external_account_id: '', webhook_secret: '', config_text: '{}' });
       await load();
       toast('Integration account created.', 'success');
     } catch (error) { toast(error.message || 'Could not save account.', 'danger'); }
@@ -135,6 +137,7 @@ function IntegrationAccounts() {
         <div className="col-md-2"><Select label="Channel" name="channel" value={form.channel} onChange={(n, v) => setForm((p) => ({ ...p, [n]: v }))} options={[{ value: 'whatsapp', label: 'WhatsApp' }, { value: 'email', label: 'Email' }, { value: 'rcs', label: 'RCS' }, { value: 'sms', label: 'SMS' }, { value: 'lead_source', label: 'Lead source' }]} /></div>
         <div className="col-md-2"><Field label="External account ID" name="external_account_id" value={form.external_account_id} onChange={(n, v) => setForm((p) => ({ ...p, [n]: v }))} /></div>
         <div className="col-md-2"><Field label="Webhook secret" name="webhook_secret" type="password" value={form.webhook_secret} onChange={(n, v) => setForm((p) => ({ ...p, [n]: v }))} /></div>
+        <div className="col-md-2"><label className="crm-label">Account config (JSON)</label><textarea className="form-control crm-input" rows="2" value={form.config_text} onChange={(e) => setForm((p) => ({ ...p, config_text: e.target.value }))} placeholder='{"api_key":"..."}' /></div>
         <div className="col-md-1"><button className="btn btn-crm w-100" disabled={busy}>{busy ? '…' : 'Add'}</button></div>
       </form>
       {accounts.length === 0 ? <div className="text-muted text-12">No separate integration accounts added yet.</div> : (

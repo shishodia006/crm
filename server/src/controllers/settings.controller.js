@@ -15,7 +15,7 @@ export async function saveSettings(req, res) {
     'app_name','timezone','currency','smtp_host','smtp_port','smtp_user','smtp_pass','smtp_from','smtp_from_name',
     'sendgrid_key','mailgun_key','mailgun_domain','ses_key','ses_secret','ses_region','wa_api_token','wa_phone_id',
     'sms_provider','sms_api_key','sms_sender','rcs_api_key','score_email_open','score_email_click','score_wa_read',
-    'score_wa_reply','score_website_visit','score_meeting_booked','score_quotation_requested','score_purchase_completed','ai_enabled'
+    'score_wa_reply','score_website_visit','score_meeting_booked','score_quotation_requested','score_purchase_completed','ai_enabled','ai_api_url','ai_api_key'
   ];
   for (const key of allowed) {
     if (req.body[key] !== undefined) await saveCompanySetting(req.companyId, key, req.body[key], 'general');
@@ -72,7 +72,7 @@ export async function saveIntegrations(req, res) {
     wa_anantya_api_user: 'whatsapp', wa_anantya_waba_id: 'whatsapp', sms_provider: 'sms', sms_api_key: 'sms',
     sms_sender: 'sms', rcs_api_key: 'rcs', indiamart_key: 'sources', tradeindia_key: 'sources',
     tradeindia_user_id: 'sources', meta_ads_token: 'sources', meta_app_secret: 'sources', google_ads_token: 'sources',
-    google_ads_customer_id: 'sources', linkedin_token: 'sources', linkedin_org_urn: 'sources', justdial_key: 'sources', justdial_login: 'sources'
+    google_ads_customer_id: 'sources', linkedin_token: 'sources', linkedin_org_urn: 'sources', justdial_key: 'sources', justdial_login: 'sources', ai_api_url: 'ai', ai_api_key: 'ai'
   };
   for (const [key, group] of Object.entries(groupMap)) {
     if (req.body[key] !== undefined) await saveCompanySetting(req.companyId, key, req.body[key], group);
