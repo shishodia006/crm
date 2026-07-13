@@ -1,11 +1,25 @@
-import { one, q, run } from '../db/pool.js';
+import { one, q, run, scalar } from '../db/pool.js';
 import { ok, fail } from '../utils/response.js';
 import { transaction } from '../db/pool.js';
 
-export async function index(_req, res) {
+function computeSequenceInsight(steps, openRate) {
+  const totalClicks = steps.reduce((sum, r) => sum + Number(r.clicked || 0), 0);
+  if (totalClicks > 0) {
+    const best = steps.reduce((a, b) => (Number(b.clicked || 0) > Number(a.clicked || 0) ? b : a));
+    const share = Math.round((Number(best.clicked) / totalClicks) * 100);
+    if (share >= 40) return { type: 'positive', text: `Step ${best.step_order} ("${String(best.type).replaceAll('_', ' ')}") drives ${share}% of all clicks` };
+  }
+  if (openRate != null && openRate > 0 && openRate < 20) {
+    return { type: 'warning', text: `Open rate (${openRate}%) is below target — consider revising subject lines or send times` };
+  }
+  return null;
+}
+
+export async function index(req, res) {
   const campaigns = await q(
     `SELECT c.*, COUNT(le.id) AS enrolled, SUM(le.status='active') AS active_leads,
             SUM(le.status='converted') AS converted, u.name AS created_by_name,
+            (SELECT COUNT(*) FROM workflow_steps WHERE campaign_id=c.id) AS step_count,
             (SELECT COUNT(*) FROM communications cm JOIN lead_enrollments x ON x.id=cm.enrollment_id WHERE x.campaign_id=c.id AND cm.channel='whatsapp') AS wa_sent,
             (SELECT COUNT(*) FROM communications cm JOIN lead_enrollments x ON x.id=cm.enrollment_id WHERE x.campaign_id=c.id AND cm.channel='whatsapp' AND cm.status IN ('delivered','opened','clicked','replied')) AS wa_delivered,
             (SELECT COUNT(*) FROM communications cm JOIN lead_enrollments x ON x.id=cm.enrollment_id WHERE x.campaign_id=c.id AND cm.channel='sms') AS sms_sent,
@@ -13,11 +27,33 @@ export async function index(_req, res) {
             (SELECT COUNT(*) FROM communications cm JOIN lead_enrollments x ON x.id=cm.enrollment_id WHERE x.campaign_id=c.id AND cm.channel='rcs') AS rcs_sent,
             (SELECT COUNT(*) FROM communications cm JOIN lead_enrollments x ON x.id=cm.enrollment_id WHERE x.campaign_id=c.id AND cm.channel='rcs' AND cm.status IN ('delivered','opened','clicked','replied')) AS rcs_delivered,
             (SELECT COUNT(*) FROM communications cm JOIN lead_enrollments x ON x.id=cm.enrollment_id WHERE x.campaign_id=c.id AND cm.channel='email') AS email_sent,
-            (SELECT COUNT(*) FROM communications cm JOIN lead_enrollments x ON x.id=cm.enrollment_id WHERE x.campaign_id=c.id AND cm.channel='email' AND cm.status IN ('opened','clicked')) AS email_opened
+            (SELECT COUNT(*) FROM communications cm JOIN lead_enrollments x ON x.id=cm.enrollment_id WHERE x.campaign_id=c.id AND cm.channel='email' AND cm.status IN ('opened','clicked')) AS email_opened,
+            (SELECT COUNT(*) FROM communications cm JOIN lead_enrollments x ON x.id=cm.enrollment_id WHERE x.campaign_id=c.id) AS total_sent,
+            (SELECT COUNT(*) FROM communications cm JOIN lead_enrollments x ON x.id=cm.enrollment_id WHERE x.campaign_id=c.id AND cm.status IN ('opened','clicked','replied')) AS total_opened,
+            (SELECT COUNT(*) FROM communications cm JOIN lead_enrollments x ON x.id=cm.enrollment_id WHERE x.campaign_id=c.id AND cm.status='clicked') AS total_clicked
      FROM campaigns c LEFT JOIN lead_enrollments le ON le.campaign_id=c.id LEFT JOIN users u ON u.id=c.created_by
-     WHERE c.company_id=? GROUP BY c.id ORDER BY c.created_at DESC`,
+     WHERE c.company_id=? AND c.type='drip' GROUP BY c.id ORDER BY c.created_at DESC`,
     [req.companyId]
   );
+
+  for (const c of campaigns) {
+    c.channels = ['whatsapp', 'sms', 'rcs', 'email'].filter((ch) => Number(c[`${ch}_sent`] || 0) > 0);
+    const sent = Number(c.total_sent || 0), opened = Number(c.total_opened || 0), clicked = Number(c.total_clicked || 0);
+    c.open_rate = sent > 0 ? Math.round((opened / sent) * 100) : 0;
+    c.click_rate = sent > 0 ? Math.round((clicked / sent) * 100) : 0;
+    c.insight = null;
+    if (Number(c.step_count) > 0 && sent >= 5) {
+      const steps = await q(
+        `SELECT ws.id, ws.step_order, ws.type, COUNT(cm.id) AS sent,
+                SUM(cm.status IN ('opened','clicked','replied')) AS opened, SUM(cm.status='clicked') AS clicked
+         FROM workflow_steps ws LEFT JOIN communications cm ON cm.step_id=ws.id
+         WHERE ws.campaign_id=? GROUP BY ws.id ORDER BY ws.step_order ASC`,
+        [c.id]
+      );
+      c.insight = computeSequenceInsight(steps, c.open_rate);
+    }
+  }
+
   ok(res, { campaigns });
 }
 

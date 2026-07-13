@@ -16,6 +16,19 @@ export const config = {
   cronSecret: process.env.CRON_SECRET || '',
   perPage: Number(process.env.PER_PAGE || 25),
   dripBatchSize: Number(process.env.DRIP_BATCH_SIZE || 50),
+  sms: {
+    provider: process.env.SMS_PROVIDER || 'mshastra',
+    apiUrl: process.env.SMS_API_URL || '',
+    apiKey: process.env.SMS_API_KEY || '',
+    sender: process.env.SMS_SENDER || '',
+    mshastra: {
+      url: process.env.SMS_MSHASTRA_URL || 'https://mshastra.com/sendurl.aspx',
+      user: process.env.SMS_MSHASTRA_USER || '',
+      pwd: process.env.SMS_MSHASTRA_PWD || '',
+      sender: process.env.SMS_MSHASTRA_SENDER || '',
+      country: process.env.SMS_MSHASTRA_COUNTRY || '91'
+    }
+  },
   uploadPath: process.env.UPLOAD_PATH
     ? path.resolve(__dirname, '../..', process.env.UPLOAD_PATH)
     : path.resolve(__dirname, '../../../uploads'),

@@ -21,7 +21,15 @@ export async function index(req, res) {
     params.push(`%${req.query.q}%`, `%${req.query.q}%`);
   }
   const templates = await q(
-    `SELECT t.*, u.name AS created_by_name FROM templates t LEFT JOIN users u ON u.id=t.created_by
+    `SELECT t.*, u.name AS created_by_name,
+            (SELECT COUNT(DISTINCT ws.campaign_id) FROM workflow_steps ws
+             WHERE ws.template_id=t.id
+                OR JSON_UNQUOTE(JSON_EXTRACT(ws.action_data,'$.email_template_id'))=t.id
+                OR JSON_UNQUOTE(JSON_EXTRACT(ws.action_data,'$.whatsapp_template_id'))=t.id
+                OR JSON_UNQUOTE(JSON_EXTRACT(ws.action_data,'$.rcs_template_id'))=t.id
+                OR JSON_UNQUOTE(JSON_EXTRACT(ws.action_data,'$.sms_template_id'))=t.id
+            ) AS used_in_count
+     FROM templates t LEFT JOIN users u ON u.id=t.created_by
      WHERE ${where.join(' AND ')} ORDER BY t.created_at DESC LIMIT 100`,
     params
   );

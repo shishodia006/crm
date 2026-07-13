@@ -1,0 +1,63 @@
+import { one } from '../db/pool.js';
+import { ok, fail } from '../utils/response.js';
+import {
+  listConversations,
+  getConversationCounts,
+  getThread,
+  getOrCreateConversation,
+  sendReply,
+  markRead,
+} from '../services/conversation.service.js';
+
+export async function index(req, res) {
+  const { channel, assigned, search } = req.query;
+  const [conversations, counts] = await Promise.all([
+    listConversations(req.companyId, { channel, assigned, search }),
+    getConversationCounts(req.companyId),
+  ]);
+  ok(res, { conversations, counts });
+}
+
+export async function show(req, res) {
+  const data = await getThread(req.companyId, Number(req.params.id));
+  if (!data) return fail(res, 'Conversation not found.', 404);
+  ok(res, data);
+}
+
+export async function store(req, res) {
+  const leadId = Number(req.body.lead_id);
+  const channel = req.body.channel || 'email';
+  if (!leadId) return fail(res, 'Lead is required.', 422);
+
+  const lead = await one('SELECT id FROM leads WHERE id=? AND company_id=? LIMIT 1', [leadId, req.companyId]);
+  if (!lead) return fail(res, 'Lead not found.', 404);
+
+  const conversation = await getOrCreateConversation(req.companyId, leadId, channel);
+
+  const body = String(req.body.message || '').trim();
+  let message = null;
+  let delivered = null;
+  if (body) {
+    const result = await sendReply(req.companyId, conversation.id, req.user.id, body);
+    message = result.message;
+    delivered = result.delivered;
+  }
+
+  ok(res, { id: conversation.id, message, delivered }, 'Conversation ready.');
+}
+
+export async function reply(req, res) {
+  const body = String(req.body.body || '').trim();
+  if (!body) return fail(res, 'Message body required.', 422);
+
+  const result = await sendReply(req.companyId, Number(req.params.id), req.user.id, body);
+  if (result.error === 'not_found') return fail(res, 'Conversation not found.', 404);
+  if (result.error === 'lead_not_found') return fail(res, 'Lead not found on this conversation.', 404);
+
+  ok(res, { message: result.message, delivered: result.delivered }, result.delivered ? 'Message sent.' : (result.error || 'Message saved but delivery failed.'));
+}
+
+export async function read(req, res) {
+  await markRead(req.companyId, Number(req.params.id));
+  ok(res, null);
+}

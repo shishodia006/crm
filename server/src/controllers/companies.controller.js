@@ -21,7 +21,7 @@ export async function select(req, res) {
 
 export async function members(req, res) {
   const members = await q(
-    `SELECT u.id,u.name,u.email,u.role,u.is_active,cu.role AS company_role
+    `SELECT u.id,u.name,u.email,u.role,u.status,u.is_active,cu.role AS company_role
      FROM company_users cu JOIN users u ON u.id=cu.user_id WHERE cu.company_id=? ORDER BY u.name`,
     [req.companyId]
   );

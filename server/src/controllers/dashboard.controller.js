@@ -1,6 +1,10 @@
 import { q, one, scalar } from '../db/pool.js';
 import { ok } from '../utils/response.js';
 import { companiesForUser } from '../services/company.service.js';
+import {
+  pipelineSnapshot, businessHealth, actionRequired, leadSourceTrends,
+  monthlyGoals, dripSequences, liveActivity
+} from '../services/overview.service.js';
 
 export async function index(req, res) {
   const days = 30;
@@ -61,7 +65,56 @@ export async function index(req, res) {
      WHERE t.company_id=? AND t.done=0 AND t.assigned_to=? ORDER BY t.due_at ASC LIMIT 8`,
     [req.companyId, req.user.id]
   );
-  ok(res, { stats, dripStats, channelSends, dailyLeads, sourceStats, categoryStats, funnelStats, recentLeads, pendingTasks });
+
+  const [
+    pipelineValueNow, pipelineValue30dAgo, dealsWonThisMonth, dealsWonLastMonth,
+    totalLeads30dAgo, totalWon30dAgo,
+    funnel, health, action, sources, goals, drip, activity
+  ] = await Promise.all([
+    scalar("SELECT COALESCE(SUM(d.value),0) FROM deals d JOIN pipeline_stages ps ON ps.id=d.stage_id WHERE d.company_id=? AND ps.is_won=0 AND ps.is_lost=0", [req.companyId]),
+    scalar(`SELECT COALESCE(SUM(value),0) FROM deals WHERE company_id=? AND created_at <= DATE_SUB(NOW(), INTERVAL 30 DAY)
+            AND (won_at IS NULL OR won_at >= DATE_SUB(NOW(), INTERVAL 30 DAY))
+            AND (lost_at IS NULL OR lost_at >= DATE_SUB(NOW(), INTERVAL 30 DAY))`, [req.companyId]),
+    scalar("SELECT COUNT(*) FROM deals WHERE company_id=? AND won_at >= DATE_FORMAT(NOW(),'%Y-%m-01')", [req.companyId]),
+    scalar(`SELECT COUNT(*) FROM deals WHERE company_id=? AND won_at >= DATE_SUB(DATE_FORMAT(NOW(),'%Y-%m-01'), INTERVAL 1 MONTH)
+            AND won_at < DATE_FORMAT(NOW(),'%Y-%m-01')`, [req.companyId]),
+    scalar('SELECT COUNT(*) FROM leads WHERE company_id=? AND created_at <= DATE_SUB(NOW(), INTERVAL 30 DAY)', [req.companyId]),
+    scalar("SELECT COUNT(*) FROM leads WHERE company_id=? AND status='won' AND won_at <= DATE_SUB(NOW(), INTERVAL 30 DAY)", [req.companyId]),
+    pipelineSnapshot(req.companyId),
+    businessHealth(req.companyId),
+    actionRequired(req.companyId),
+    leadSourceTrends(req.companyId),
+    monthlyGoals(req.companyId),
+    dripSequences(req.companyId),
+    liveActivity(req.companyId)
+  ]);
+
+  const closeRate = health.closeRate;
+  const closeRateLastMonth = Number(totalLeads30dAgo) > 0 ? Math.round((Number(totalWon30dAgo) / Number(totalLeads30dAgo)) * 1000) / 10 : null;
+
+  const overview = {
+    stats: {
+      pipelineValue: Number(pipelineValueNow),
+      pipelineValueTrendPct: Number(pipelineValue30dAgo) > 0 ? Math.round(((Number(pipelineValueNow) - Number(pipelineValue30dAgo)) / Number(pipelineValue30dAgo)) * 1000) / 10 : null,
+      dealsWonThisMonth: Number(dealsWonThisMonth),
+      dealsWonLastMonth: Number(dealsWonLastMonth),
+      closeRate,
+      closeRateTrendPct: closeRateLastMonth != null ? Math.round((closeRate - closeRateLastMonth) * 10) / 10 : null,
+      industryCloseRate: health.industryBenchmark,
+      leadsNeedingAction: action.count,
+      leadsAtRiskValue: action.atRiskValue
+    },
+    funnel,
+    businessHealth: health,
+    actionRequired: action.items,
+    leadSources: sources.sources,
+    leadSourceInsight: sources.insight,
+    monthlyGoals: goals,
+    drip,
+    liveActivity: activity
+  };
+
+  ok(res, { stats, dripStats, channelSends, dailyLeads, sourceStats, categoryStats, funnelStats, recentLeads, pendingTasks, overview });
 }
 
 export async function dailyStats(req, res) {

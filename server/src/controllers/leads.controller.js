@@ -82,6 +82,10 @@ export async function destroy(req, res) {
 
 export async function importCsv(req, res) {
   if (!req.file) return fail(res, 'CSV file required.', 422);
+  if (!/\.csv$/i.test(req.file.originalname || '')) {
+    await fs.promises.unlink(req.file.path).catch(() => {});
+    return fail(res, 'Please upload a .csv file.', 422);
+  }
   const sourceId = Number(req.body.source_id || 16);
   const fileText = await fs.promises.readFile(req.file.path, 'utf8');
   await fs.promises.unlink(req.file.path).catch(() => {});

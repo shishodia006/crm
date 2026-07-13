@@ -6,24 +6,81 @@ import crypto from 'crypto';
 import fs from 'fs';
 import { config } from '../config/index.js';
 
+const DAY_MS = 86400000;
+
+function dayLabel(date) {
+  const target = new Date(date); target.setHours(0, 0, 0, 0);
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const diff = Math.round((target - today) / DAY_MS);
+  if (diff === 0) return 'today';
+  if (diff === 1) return 'tomorrow';
+  return new Date(date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' });
+}
+
+function computeDealStatus(deal, stage, lastStageChange, nextMeeting) {
+  if (stage.is_won) {
+    const daysSinceWon = deal.won_at ? Math.floor((Date.now() - new Date(deal.won_at).getTime()) / DAY_MS) : 0;
+    return { text: daysSinceWon <= 3 ? 'Onboarding started' : 'Onboarded', color: 'green' };
+  }
+  if (nextMeeting) {
+    const time = new Date(nextMeeting).toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' });
+    return { text: `Meeting ${dayLabel(nextMeeting)}, ${time}`, color: 'green' };
+  }
+  const sinceStage = lastStageChange || deal.created_at;
+  const daysInStage = Math.max(0, Math.floor((Date.now() - new Date(sinceStage).getTime()) / DAY_MS));
+  if (daysInStage > 7) return { text: `${daysInStage} days stalled`, color: 'red' };
+  if (daysInStage >= 3) return { text: `Awaiting reply ${daysInStage}d`, color: 'amber' };
+  const createdToday = new Date(deal.created_at).toDateString() === new Date().toDateString();
+  if (createdToday && daysInStage === 0) return { text: 'New today', color: 'green' };
+  return { text: `${daysInStage} day${daysInStage === 1 ? '' : 's'} in stage`, color: 'gray' };
+}
+
 export async function pipelineBoard(req, res) {
   const stagesRaw = await q(
     `SELECT ps.*, COUNT(d.id) AS count, COALESCE(SUM(d.value),0) AS value
      FROM pipeline_stages ps LEFT JOIN deals d ON d.stage_id=ps.id AND d.company_id=?
-     WHERE ps.is_active=1 GROUP BY ps.id ORDER BY ps.stage_order ASC`,
+     WHERE ps.is_active=1 AND ps.is_lost=0 GROUP BY ps.id ORDER BY ps.stage_order ASC`,
     [req.companyId]
   );
-  const stages = [];
-  for (const stage of stagesRaw) {
-    stage.deals = await q(
-      `SELECT d.*, l.name AS lead_name, u.name AS assigned_name FROM deals d
-       LEFT JOIN leads l ON l.id=d.lead_id LEFT JOIN users u ON u.id=d.assigned_to
-       WHERE d.stage_id=? AND d.company_id=? ORDER BY d.value DESC LIMIT 50`,
-      [stage.id, req.companyId]
-    );
-    stages.push(stage);
+
+  const allDeals = await q(
+    `SELECT d.*, l.name AS lead_name, u.name AS assigned_name FROM deals d
+     JOIN pipeline_stages ps ON ps.id=d.stage_id
+     LEFT JOIN leads l ON l.id=d.lead_id LEFT JOIN users u ON u.id=d.assigned_to
+     WHERE d.company_id=? AND ps.is_active=1 AND ps.is_lost=0 ORDER BY d.value DESC`,
+    [req.companyId]
+  );
+
+  const dealIds = allDeals.map((d) => d.id);
+  let lastStageChangeById = {}, nextMeetingById = {};
+  if (dealIds.length) {
+    const marks = dealIds.map(() => '?').join(',');
+    const [stageRows, meetingRows] = await Promise.all([
+      q(`SELECT deal_id, MAX(changed_at) AS last_change FROM deal_stage_history WHERE deal_id IN (${marks}) GROUP BY deal_id`, dealIds),
+      q(
+        `SELECT deal_id, scheduled_at FROM (
+           SELECT deal_id, scheduled_at, ROW_NUMBER() OVER (PARTITION BY deal_id ORDER BY scheduled_at ASC) AS rn
+           FROM meetings WHERE deal_id IN (${marks}) AND status='scheduled' AND scheduled_at > NOW()
+         ) t WHERE rn = 1`,
+        dealIds
+      )
+    ]);
+    lastStageChangeById = Object.fromEntries(stageRows.map((r) => [Number(r.deal_id), r.last_change]));
+    nextMeetingById = Object.fromEntries(meetingRows.map((r) => [Number(r.deal_id), r.scheduled_at]));
   }
-  ok(res, { stages });
+
+  const stageById = Object.fromEntries(stagesRaw.map((s) => [Number(s.id), s]));
+  const dealsByStage = {};
+  for (const deal of allDeals) {
+    const stage = stageById[Number(deal.stage_id)];
+    const status = computeDealStatus(deal, stage, lastStageChangeById[deal.id], nextMeetingById[deal.id]);
+    (dealsByStage[deal.stage_id] ||= []).push({ ...deal, status_text: status.text, status_color: status.color });
+  }
+
+  const stages = stagesRaw.map((stage) => ({ ...stage, deals: dealsByStage[stage.id] ?? [] }));
+  const totalValue = stagesRaw.reduce((sum, s) => sum + Number(s.value), 0);
+  const totalDeals = stagesRaw.reduce((sum, s) => sum + Number(s.count), 0);
+  ok(res, { stages, summary: { totalValue, totalDeals } });
 }
 
 export async function dealsIndex(req, res) {

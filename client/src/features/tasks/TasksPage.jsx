@@ -1,28 +1,181 @@
 import { useState } from 'react';
 import { useResource } from '../../hooks/useResource.js';
+import { usePageTabs } from '../../hooks/usePageTabs.js';
 import LoadingBox from '../../components/common/LoadingBox.jsx';
-import { formatDate } from '../../utils/formatters.js';
+import { formatDate, timeAgo, money, initials } from '../../utils/formatters.js';
 import { api } from '../../services/api.js';
 import { useToast } from '../../hooks/useToast.js';
 
 const TABS = [
-  { key: 'pending',   label: 'Pending',   icon: 'clock' },
-  { key: 'overdue',   label: 'Overdue',   icon: 'exclamation-circle' },
-  { key: 'completed', label: 'Completed', icon: 'check-circle' },
+  { key: 'mine', label: 'My Tasks' },
+  { key: 'overdue', label: 'Overdue' },
+  { key: 'team', label: 'Team' },
+  { key: 'completed', label: 'Completed' },
 ];
 
 const BLANK = { title: '', due_at: '', priority: 'normal', description: '' };
 
+function dueLabel(dueAt) {
+  if (!dueAt) return null;
+  const d = new Date(dueAt);
+  const now = new Date();
+  const dOnly = new Date(d); dOnly.setHours(0, 0, 0, 0);
+  const nOnly = new Date(now); nOnly.setHours(0, 0, 0, 0);
+  const diffDays = Math.round((dOnly - nOnly) / 86400000);
+  const time = d.toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' });
+  if (diffDays === 0) return `Today, ${time}`;
+  if (diffDays === 1) return `Tomorrow, ${time}`;
+  if (diffDays === -1) return 'Yesterday';
+  if (diffDays < -1) return formatDate(dueAt);
+  if (diffDays > 1 && diffDays <= 6) return d.toLocaleDateString('en-IN', { weekday: 'long' });
+  return formatDate(dueAt);
+}
+
+function isOverdue(task) {
+  if (task.done || !task.due_at) return false;
+  const d = new Date(task.due_at);
+  return d < new Date() && d.toDateString() !== new Date().toDateString();
+}
+
+function isToday(task) {
+  return task.due_at && new Date(task.due_at).toDateString() === new Date().toDateString();
+}
+
+function groupTasks(tasks) {
+  const overdue = [], today = [], upcoming = [], noDue = [];
+  for (const t of tasks) {
+    if (!t.due_at) noDue.push(t);
+    else if (isOverdue(t)) overdue.push(t);
+    else if (isToday(t)) today.push(t);
+    else upcoming.push(t);
+  }
+  return [
+    { key: 'overdue', label: 'Overdue', items: overdue },
+    { key: 'today', label: 'Today', items: today },
+    { key: 'upcoming', label: 'Upcoming', items: upcoming },
+    { key: 'nodue', label: 'No Due Date', items: noDue },
+  ].filter((g) => g.items.length > 0);
+}
+
+function linkedToInfo(task) {
+  if (task.deal_id) return { icon: 'briefcase-fill', text: task.deal_title || 'Deal', extra: task.deal_value ? money(task.deal_value) : null };
+  if (task.lead_id) return { icon: 'person-fill', text: task.lead_name || 'Lead', extra: null };
+  return null;
+}
+
+function TaskRow({ task, onDone, onDelete, showAssignee }) {
+  const overdue = isOverdue(task);
+  const accent = task.done ? '#22c55e' : overdue ? '#ef4444' : isToday(task) ? '#f59e0b' : '#c7cad1';
+  const linked = linkedToInfo(task);
+
+  return (
+    <div className="crm-task-row" style={{ '--task-accent': accent }}>
+      <button
+        onClick={() => !task.done && onDone(task.id)}
+        title={task.done ? 'Completed' : 'Mark as done'}
+        className={`crm-task-circle flex-shrink-0${overdue ? ' overdue' : ''}`}
+        disabled={task.done}
+      >
+        {task.done && <i className="bi bi-check-lg text-success" />}
+      </button>
+
+      <div className="flex-grow-1 min-w-0">
+        <div className={`crm-task-row-title${task.done ? ' done' : ''}`}>{task.title}</div>
+        <div className="crm-task-row-sub text-truncate">
+          {showAssignee && task.assigned_name && <span className="me-2"><i className="bi bi-person-circle me-1" />{task.assigned_name}</span>}
+          {linked ? <span><i className={`bi bi-${linked.icon} me-1`} />Linked to {linked.text}{linked.extra ? ` · ${linked.extra}` : ''}</span> : <span className="text-muted-3">Account task</span>}
+        </div>
+      </div>
+
+      <div className={`crm-task-row-time flex-shrink-0 ${overdue ? 'text-danger fw-semibold' : isToday(task) ? 'icon-amber fw-semibold' : ''}`}>
+        {task.done ? `Completed ${timeAgo(task.done_at)} ago` : dueLabel(task.due_at) || '—'}
+      </div>
+
+      <button onClick={() => onDelete(task.id)} className="crm-task-delete flex-shrink-0"><i className="bi bi-trash3" /></button>
+    </div>
+  );
+}
+
+function TeamTable({ tasks, onDone, onDelete }) {
+  if (!tasks.length) return <p className="text-muted text-center py-5 mb-0">No open tasks across the team.</p>;
+  return (
+    <div className="table-responsive">
+      <table className="table align-middle mb-0 crm-table">
+        <thead><tr><th>Task</th><th>Assignee</th><th>Linked To</th><th>Due</th><th>Status</th><th></th></tr></thead>
+        <tbody>
+          {tasks.map((t) => {
+            const overdue = isOverdue(t);
+            const linked = linkedToInfo(t);
+            return (
+              <tr key={t.id}>
+                <td className="fw-semibold text-13">{t.title}</td>
+                <td>
+                  {t.assigned_name
+                    ? <span className="d-flex align-items-center gap-2"><span className="crm-agent-avatar">{initials(t.assigned_name)}</span>{t.assigned_name}</span>
+                    : <span className="text-muted-3">Unassigned</span>}
+                </td>
+                <td className="text-12">{linked ? `${linked.text}${linked.extra ? ` · ${linked.extra}` : ''}` : <span className="text-muted-3">Account</span>}</td>
+                <td className={`text-12 ${overdue ? 'text-danger fw-semibold' : ''}`}>{dueLabel(t.due_at) || '—'}</td>
+                <td><span className={`badge badge-crm badge-${overdue ? 'overdue' : 'pending'}`}>{overdue ? 'Overdue' : 'Pending'}</span></td>
+                <td className="text-end">
+                  <button className="btn btn-sm btn-outline-secondary me-1" onClick={() => onDone(t.id)}><i className="bi bi-check-lg" /></button>
+                  <button className="btn btn-sm btn-outline-danger" onClick={() => onDelete(t.id)}><i className="bi bi-trash3" /></button>
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function BoardView({ tasks, onDone, onDelete }) {
+  const groups = groupTasks(tasks);
+  if (!groups.length) return <p className="text-muted text-center py-5 mb-0">Nothing here.</p>;
+  return (
+    <div className="d-flex gap-3 overflow-auto pb-2">
+      {groups.map((g) => (
+        <div key={g.key} className="crm-pipeline-col flex-shrink-0">
+          <div className="d-flex align-items-center gap-2 mb-2 px-1">
+            <span className="fw-semibold text-13">{g.label}</span>
+            <span className="badge badge-crm badge-purple">{g.items.length}</span>
+          </div>
+          <div className="d-flex flex-column gap-2">
+            {g.items.map((t) => (
+              <div key={t.id} className="card border-0 shadow-sm crm-deal-card text-13" style={{ '--deal-accent': g.key === 'overdue' ? '#ef4444' : g.key === 'today' ? '#f59e0b' : '#c7cad1' }}>
+                <div className="card-body p-2">
+                  <div className="fw-semibold text-truncate">{t.title}</div>
+                  <div className="text-11 text-muted-3 text-truncate mt-1">{linkedToInfo(t)?.text || 'Account task'}</div>
+                  <div className="d-flex justify-content-between align-items-center mt-1">
+                    <span className="text-11 text-muted-3">{dueLabel(t.due_at) || 'No due date'}</span>
+                    <button className="btn btn-sm p-0 text-success" onClick={() => onDone(t.id)}><i className="bi bi-check-circle" /></button>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export default function TasksPage() {
   const toast = useToast();
-  const [status, setStatus] = useState('pending');
+  const [tab, setTab] = useState('mine');
+  const [boardView, setBoardView] = useState(false);
   const [showForm, setShowForm] = useState(false);
-  const [form, setForm]         = useState(BLANK);
-  const [saving, setSaving]     = useState(false);
+  const [form, setForm] = useState(BLANK);
+  const [saving, setSaving] = useState(false);
 
-  const { data, loading, reload } = useResource(`/api/tasks?status=${status}`, [status]);
-  const tasks  = data?.tasks  ?? [];
-  const counts = data?.counts ?? { pending: 0, overdue: 0, completed: 0 };
+  const statusParam = tab === 'mine' ? 'open' : tab === 'overdue' ? 'overdue' : tab === 'team' ? 'open' : 'completed';
+  const scopeParam = tab === 'team' || tab === 'completed' ? 'all' : 'mine';
+  const { data, loading, reload } = useResource(`/api/tasks?status=${statusParam}&scope=${scopeParam}`, [tab]);
+
+  const tasks = data?.tasks ?? [];
+  const counts = data?.counts ?? { mine: 0, overdue: 0, team: 0, completed: 0 };
+  usePageTabs(TABS.map((t) => ({ ...t, badge: counts[t.key] })), tab, setTab);
 
   const set = (k, v) => setForm((p) => ({ ...p, [k]: v }));
 
@@ -53,7 +206,7 @@ export default function TasksPage() {
   };
 
   const deleteTask = async (id) => {
-    if (!confirm('Delete this task?')) return;
+    if (!window.confirm('Delete this task?')) return;
     try {
       await api.delete(`/api/tasks/${id}`);
       reload();
@@ -62,61 +215,47 @@ export default function TasksPage() {
     }
   };
 
-  const activeTab = TABS.find((t) => t.key === status);
+  const groups = tab === 'mine' && !boardView ? groupTasks(tasks) : null;
 
   return (
     <div>
-      {/* Header */}
-      <div className="d-flex align-items-center justify-content-between mb-4">
-        <h5 className="fw-bold mb-0 text-brand">Tasks</h5>
-        <button onClick={() => setShowForm((v) => !v)} className="btn btn-crm">
-          <i className="bi bi-plus-lg" />Add Task
-        </button>
+      <div className="d-flex align-items-center justify-content-end flex-wrap gap-2 mb-3">
+        {tab === 'mine' && (
+          <button className="btn btn-outline-secondary rounded-crm-xs text-13" onClick={() => setBoardView((v) => !v)}>
+            <i className={`bi bi-${boardView ? 'list-ul' : 'kanban'} me-1`} />{boardView ? 'List View' : 'Board View'}
+          </button>
+        )}
+        <button className="btn-crm" onClick={() => setShowForm((v) => !v)}><i className="bi bi-plus-lg" />New Task</button>
       </div>
 
-      {/* Add Task Form */}
       {showForm && (
-        <div className="card crm-card mb-4">
+        <div className="card crm-card my-3">
           <div className="card-body p-4">
-            <h6 className="fw-bold mb-3 text-brand">
-              <i className="bi bi-plus-circle me-2 text-purple" />New Task
-            </h6>
+            <h6 className="fw-bold mb-3 text-brand"><i className="bi bi-plus-circle me-2 text-purple" />New Task</h6>
             <form onSubmit={handleAdd}>
               <div className="row g-3">
                 <div className="col-md-5">
                   <label className="crm-label">Title <span className="req">*</span></label>
-                  <input
-                    className="form-control crm-input"
-                    placeholder="Task title…"
-                    value={form.title} onChange={(e) => set('title', e.target.value)} required
-                  />
+                  <input className="crm-input" placeholder="Task title…" value={form.title} onChange={(e) => set('title', e.target.value)} required />
                 </div>
                 <div className="col-md-3">
                   <label className="crm-label">Due Date</label>
-                  <input
-                    type="datetime-local" className="form-control crm-input"
-                    value={form.due_at} onChange={(e) => set('due_at', e.target.value)}
-                  />
+                  <input type="datetime-local" className="crm-input" value={form.due_at} onChange={(e) => set('due_at', e.target.value)} />
                 </div>
                 <div className="col-md-2">
                   <label className="crm-label">Priority</label>
-                  <select className="form-select crm-select"
-                    value={form.priority} onChange={(e) => set('priority', e.target.value)}>
+                  <select className="crm-select w-100" value={form.priority} onChange={(e) => set('priority', e.target.value)}>
                     <option value="high">High</option>
                     <option value="normal">Normal</option>
                     <option value="low">Low</option>
                   </select>
                 </div>
                 <div className="col-md-2 d-flex align-items-end">
-                  <button className="btn btn-crm w-100" disabled={saving}>
-                    {saving ? <span className="spinner-border spinner-border-sm" /> : 'Add'}
-                  </button>
+                  <button className="btn-crm w-100" disabled={saving}>{saving ? <span className="spinner-border spinner-border-sm" /> : 'Add'}</button>
                 </div>
                 <div className="col-12">
                   <label className="crm-label">Description (optional)</label>
-                  <textarea className="form-control crm-input no-resize"
-                    rows={2} placeholder="Add details…"
-                    value={form.description} onChange={(e) => set('description', e.target.value)} />
+                  <textarea className="crm-input no-resize" rows={2} placeholder="Add details…" value={form.description} onChange={(e) => set('description', e.target.value)} />
                 </div>
               </div>
             </form>
@@ -124,80 +263,28 @@ export default function TasksPage() {
         </div>
       )}
 
-      {/* Tabs */}
-      <div className="d-flex gap-2 mb-4">
-        {TABS.map((t) => (
-          <button
-            key={t.key}
-            onClick={() => setStatus(t.key)}
-            className={`crm-task-tab${status === t.key ? ` ${t.key}-active` : ''}`}
-          >
-            <i className={`bi bi-${t.icon}`} />
-            {t.label}
-            <span className="crm-task-tab-count">{counts[t.key] ?? 0}</span>
-          </button>
-        ))}
-      </div>
-
-      {/* Task list */}
-      <div className="card crm-card">
-        {loading ? <LoadingBox /> : tasks.length === 0 ? (
-          <div className="crm-empty">
-            <i className={`bi bi-${activeTab?.icon} crm-empty-icon`} />
-            <div className="crm-empty-title">No {activeTab?.label.toLowerCase()} tasks</div>
+      {loading ? <LoadingBox /> : (
+        <div className="card crm-card">
+          <div className="card-body p-4">
+            {tab === 'team' ? (
+              <TeamTable tasks={tasks} onDone={markDone} onDelete={deleteTask} />
+            ) : tab === 'mine' && boardView ? (
+              <BoardView tasks={tasks} onDone={markDone} onDelete={deleteTask} />
+            ) : tasks.length === 0 ? (
+              <p className="text-muted text-center py-5 mb-0">Nothing here.</p>
+            ) : groups ? (
+              groups.map((g) => (
+                <div key={g.key} className="mb-4">
+                  <div className="crm-task-section-label">{g.label}</div>
+                  {g.items.map((t) => <TaskRow key={t.id} task={t} onDone={markDone} onDelete={deleteTask} />)}
+                </div>
+              ))
+            ) : (
+              tasks.map((t) => <TaskRow key={t.id} task={t} onDone={markDone} onDelete={deleteTask} showAssignee={tab === 'completed'} />)
+            )}
           </div>
-        ) : (
-          <ul className="list-unstyled mb-0">
-            {tasks.map((t) => {
-              const isOverdue = !t.done && t.due_at && new Date(t.due_at) < new Date();
-              return (
-                <li key={t.id} className={`crm-task-item d-flex align-items-start gap-3 px-4 py-3${t.done ? ' done' : ''}`}>
-                  {/* Done icon / circle button */}
-                  {t.done
-                    ? <i className="bi bi-check-circle-fill text-success flex-shrink-0 mt-1 fs-5" />
-                    : <button onClick={() => markDone(t.id)} title="Mark as done"
-                        className={`crm-task-circle${isOverdue ? ' overdue' : ''}`} />
-                  }
-
-                  {/* Content */}
-                  <div className="flex-grow-1 min-w-0">
-                    <div className={`crm-task-title fw-semibold text-truncate${t.done ? ' done' : ''}`}>
-                      {t.title}
-                    </div>
-                    <div className="d-flex align-items-center gap-2 mt-1 flex-wrap">
-                      <span className={`badge badge-crm badge-${t.priority ?? 'normal'}`}>
-                        {t.priority === 'high' ? 'High' : t.priority === 'low' ? 'Low' : 'Normal'}
-                      </span>
-                      {t.due_at && (
-                        <span className={`crm-task-meta${isOverdue ? ' crm-task-overdue' : ' text-muted-2'}`}>
-                          <i className={`bi bi-${isOverdue ? 'exclamation-circle-fill' : 'calendar3'} me-1`} />
-                          {formatDate(t.due_at)}{isOverdue && ' — Overdue'}
-                        </span>
-                      )}
-                      {t.lead_name && (
-                        <span className="crm-task-meta text-purple">
-                          <i className="bi bi-person me-1" />{t.lead_name}
-                        </span>
-                      )}
-                      {t.done && t.done_at && (
-                        <span className="crm-task-meta text-muted-3">
-                          <i className="bi bi-check2 me-1" />Completed {formatDate(t.done_at)}
-                        </span>
-                      )}
-                    </div>
-                    {t.description && <div className="text-12 text-muted-2 mt-1">{t.description}</div>}
-                  </div>
-
-                  {/* Delete */}
-                  <button onClick={() => deleteTask(t.id)} className="crm-task-delete">
-                    <i className="bi bi-trash3" />
-                  </button>
-                </li>
-              );
-            })}
-          </ul>
-        )}
-      </div>
+        </div>
+      )}
     </div>
   );
 }

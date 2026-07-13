@@ -1,24 +1,12 @@
+import { useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useResource } from '../../hooks/useResource.js';
+import { usePageTabs } from '../../hooks/usePageTabs.js';
 import LoadingBox from '../../components/common/LoadingBox.jsx';
 import { api } from '../../services/api.js';
 import { useToast } from '../../hooks/useToast.js';
-
-const STATUS_COLOR = { active: 'success', paused: 'warning', draft: 'secondary', completed: 'primary' };
-
-function ChannelPill({ icon, color, sent, delivered, label }) {
-  if (!sent) return null;
-  const pct = sent > 0 ? Math.round((delivered / sent) * 100) : 0;
-  return (
-    <div className="d-flex align-items-center gap-1 text-11" title={`${label}: ${sent} sent, ${delivered} delivered (${pct}%)`}>
-      <i className={`bi ${icon}`} style={{ color, fontSize: 12 }} />
-      <span className="fw-semibold">{sent}</span>
-      {delivered > 0 && (
-        <span className="text-muted">/ <span className="text-success fw-semibold">{delivered}</span></span>
-      )}
-    </div>
-  );
-}
+import BroadcastsTab from './BroadcastsTab.jsx';
+import TemplatesTab from './TemplatesTab.jsx';
 
 function CampaignAnalytics({ campaignId }) {
   const navigate = useNavigate();
@@ -29,14 +17,14 @@ function CampaignAnalytics({ campaignId }) {
   const stats = data?.stats ?? {};
   const steps = data?.stepAnalytics ?? [];
   const maxSent = Math.max(1, ...steps.map((step) => Number(step.sent || 0)));
-  const rate = (value, total) => total ? `${Math.round((Number(value || 0) / Number(total)) * 100)}%` : '—';
+  const rate = (value, total) => (total ? `${Math.round((Number(value || 0) / Number(total)) * 100)}%` : '—');
 
   return (
     <div>
       <div className="d-flex align-items-center mb-4 gap-2">
         <button className="btn btn-outline-secondary btn-sm" onClick={() => navigate('/campaigns')}><i className="bi bi-arrow-left" /></button>
         <div className="me-auto"><h4 className="fw-bold mb-0">{campaign.name}</h4><div className="text-muted text-12">Flow performance & drop-off analysis</div></div>
-        <button className="btn btn-crm btn-crm-sm" onClick={() => navigate(`/campaigns/${campaign.id}/builder`)}><i className="bi bi-diagram-3 me-1" />Open Builder</button>
+        <button className="btn btn-crm btn-crm-sm" onClick={() => navigate(`/campaigns/${campaign.id}/simple-builder`)}><i className="bi bi-diagram-3 me-1" />Open Builder</button>
       </div>
 
       <div className="row g-3 mb-4">
@@ -58,117 +46,146 @@ function CampaignAnalytics({ campaignId }) {
   );
 }
 
-export default function CampaignsPage() {
-  const { id } = useParams();
+const TABS = [
+  { key: 'sequences', label: 'Drip Sequences' },
+  { key: 'broadcasts', label: 'Broadcasts' },
+  { key: 'templates', label: 'Templates' },
+  { key: 'builder', label: 'Builder' },
+];
+
+const CHANNEL_ICON = { email: 'envelope-fill', whatsapp: 'whatsapp', sms: 'chat-dots-fill', rcs: 'phone-vibrate-fill' };
+
+function SequenceCard({ campaign, onToggleStatus, onOpenAnalytics, onOpenBuilder }) {
+  return (
+    <div className="col-md-6">
+      <div className="card crm-card h-100">
+        <div className="card-body p-4">
+          <div className="d-flex justify-content-between align-items-start mb-1">
+            <div className="crm-link fw-bold text-15" onClick={() => onOpenAnalytics(campaign.id)}>{campaign.name}</div>
+            <span className={`badge badge-crm badge-${campaign.status === 'active' ? 'live' : 'draft'}`}>
+              {campaign.status === 'active' ? 'Active' : campaign.status === 'paused' ? 'Paused' : campaign.status}
+            </span>
+          </div>
+          <div className="text-muted text-12 mb-3">
+            {campaign.step_count} step{campaign.step_count === 1 ? '' : 's'}
+            {campaign.channels?.length > 0 && (
+              <> &middot; {campaign.channels.map((ch) => <i key={ch} className={`bi bi-${CHANNEL_ICON[ch]} ms-1`} title={ch} />)}</>
+            )}
+          </div>
+
+          <div className="row g-2 text-center mb-3">
+            <div className="col-3"><div className="fw-bold text-16">{campaign.enrolled ?? 0}</div><div className="text-11 text-muted-3">Enrolled</div></div>
+            <div className="col-3"><div className="fw-bold text-16 icon-green">{campaign.open_rate}%</div><div className="text-11 text-muted-3">Opens</div></div>
+            <div className="col-3"><div className="fw-bold text-16 icon-amber">{campaign.click_rate}%</div><div className="text-11 text-muted-3">Clicks</div></div>
+            <div className="col-3"><div className="fw-bold text-16 icon-green">{campaign.converted ?? 0}</div><div className="text-11 text-muted-3">Converted</div></div>
+          </div>
+
+          {campaign.insight && (
+            <div className={`crm-insight-banner ${campaign.insight.type} mb-3`}>
+              <i className="bi bi-lightbulb-fill" />{campaign.insight.text}
+            </div>
+          )}
+
+          <div className="d-flex gap-2">
+            <button className="btn btn-sm btn-outline-secondary flex-grow-1" onClick={() => onOpenBuilder(campaign.id)}>
+              <i className="bi bi-diagram-3 me-1" />Builder
+            </button>
+            <button className={`btn btn-sm flex-grow-1 ${campaign.status === 'active' ? 'btn-outline-warning' : 'btn-outline-success'}`} onClick={() => onToggleStatus(campaign)}>
+              {campaign.status === 'active' ? 'Pause' : 'Resume'}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function SequencesTab({ onOpenAnalytics, onOpenBuilder }) {
   const navigate = useNavigate();
   const toast = useToast();
   const { data, loading, reload } = useResource('/api/campaigns');
   const campaigns = data?.campaigns ?? [];
 
-  if (id) return <CampaignAnalytics campaignId={id} />;
-
   const toggleStatus = async (c) => {
     try {
-      if (c.status === 'active') {
-        await api.post(`/api/campaigns/${c.id}/pause`, {});
-        toast('Campaign paused.', 'warning');
-      } else {
-        await api.post(`/api/campaigns/${c.id}/activate`, {});
-        toast('Campaign activated.', 'success');
-      }
+      if (c.status === 'active') { await api.post(`/api/campaigns/${c.id}/pause`, {}); toast('Sequence paused.', 'warning'); }
+      else { await api.post(`/api/campaigns/${c.id}/activate`, {}); toast('Sequence activated.', 'success'); }
       reload();
-    } catch (err) {
-      toast(err.message, 'danger');
-    }
+    } catch (err) { toast(err.message, 'danger'); }
   };
 
-  return (
-    <>
-      <div className="d-flex align-items-center mb-4">
-        <h4 className="fw-bold mb-0 me-auto d-flex align-items-center gap-2">
-          <i className="bi bi-send text-brand" />Campaigns
-        </h4>
-        <button className="btn btn-crm btn-crm-sm" onClick={() => navigate('/campaigns/new')}>
-          <i className="bi bi-plus-lg" />New Campaign
-        </button>
-      </div>
+  if (loading) return <LoadingBox />;
+  if (campaigns.length === 0) {
+    return (
+      <div className="card crm-card"><div className="card-body crm-empty">
+        <i className="bi bi-lightning-charge crm-empty-icon" />
+        <div className="crm-empty-title">No drip sequences yet</div>
+        <div className="crm-empty-sub">Create one to start automating follow-ups.</div>
+        <button className="btn-crm mt-3" onClick={() => navigate('/campaigns/new')}><i className="bi bi-plus-lg" />New Sequence</button>
+      </div></div>
+    );
+  }
+  return <div className="row g-3">{campaigns.map((c) => <SequenceCard key={c.id} campaign={c} onToggleStatus={toggleStatus} onOpenAnalytics={onOpenAnalytics} onOpenBuilder={onOpenBuilder} />)}</div>;
+}
 
-      <div className="card border-0 shadow-sm">
-        {loading ? <LoadingBox /> : (
-          <table className="table table-hover align-middle mb-0 crm-table">
-            <thead>
-              <tr>
-                <th>NAME</th>
-                <th>TYPE</th>
-                <th>STATUS</th>
-                <th>ENROLLED</th>
-                <th>ACTIVE</th>
-                <th>CONVERTED</th>
-                <th style={{ minWidth: 130 }}>MESSAGES</th>
-                <th>ACTIONS</th>
-              </tr>
-            </thead>
-            <tbody>
-              {campaigns.length === 0 ? (
-                <tr>
-                  <td colSpan={8} className="text-center text-muted py-5">No campaigns yet.</td>
-                </tr>
-              ) : campaigns.map((c) => (
-                <tr key={c.id}>
-                  <td>
-                    <span
-                      className="fw-semibold text-primary crm-link"
-                      onClick={() => navigate(`/campaigns/${c.id}`)}
-                    >
-                      {c.name}
-                    </span>
-                    {c.description && (
-                      <div className="text-muted text-11 mt-1">{c.description}</div>
-                    )}
-                  </td>
-                  <td className="text-13 text-muted">{c.type}</td>
-                  <td>
-                    <span className={`badge text-bg-${STATUS_COLOR[c.status] ?? 'secondary'}`}>
-                      {c.status}
-                    </span>
-                  </td>
-                  <td className="text-13">{c.enrolled ?? 0}</td>
-                  <td className="text-13">{c.active_leads ?? ''}</td>
-                  <td className="text-13">{c.converted ?? ''}</td>
-                  <td>
-                    {(c.wa_sent > 0 || c.sms_sent > 0 || c.rcs_sent > 0 || c.email_sent > 0) ? (
-                      <div className="d-flex flex-column gap-1">
-                        <ChannelPill icon="bi-whatsapp"       color="#25D366" sent={Number(c.wa_sent||0)}    delivered={Number(c.wa_delivered||0)}  label="WhatsApp" />
-                        <ChannelPill icon="bi-chat-dots"      color="#6c757d" sent={Number(c.sms_sent||0)}   delivered={Number(c.sms_delivered||0)} label="SMS" />
-                        <ChannelPill icon="bi-chat-square-dots" color="#0dcaf0" sent={Number(c.rcs_sent||0)} delivered={Number(c.rcs_delivered||0)} label="RCS" />
-                        <ChannelPill icon="bi-envelope"       color="#6f42c1" sent={Number(c.email_sent||0)} delivered={Number(c.email_opened||0)}  label="Email" />
-                      </div>
-                    ) : (
-                      <span className="text-muted text-12">—</span>
-                    )}
-                  </td>
-                  <td>
-                    <div className="d-flex gap-2" onClick={(e) => e.stopPropagation()}>
-                      <button
-                        className="btn btn-outline-secondary btn-sm text-13 px-3"
-                        onClick={() => navigate(`/campaigns/${c.id}/builder`)}
-                      >
-                        Builder
-                      </button>
-                      <button
-                        className={`btn btn-sm text-13 px-3 ${c.status === 'active' ? 'btn-warning' : 'btn-success'}`}
-                        onClick={() => toggleStatus(c)}
-                      >
-                        {c.status === 'active' ? 'Pause' : 'Resume'}
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+function BuilderPicker({ onOpen }) {
+  const { data, loading } = useResource('/api/campaigns');
+  const campaigns = data?.campaigns ?? [];
+  if (loading) return <LoadingBox />;
+  if (campaigns.length === 0) return <p className="text-muted text-center py-5">No sequences to edit yet — create one first.</p>;
+  return (
+    <div className="card crm-card"><div className="card-body p-4">
+      <h6 className="fw-bold mb-3 text-brand">Choose a sequence to edit</h6>
+      <div className="list-group">
+        {campaigns.map((c) => (
+          <button key={c.id} className="list-group-item list-group-item-action d-flex justify-content-between align-items-center" onClick={() => onOpen(c.id)}>
+            <span className="fw-semibold">{c.name}</span>
+            <span className="text-muted text-12">{c.step_count} steps</span>
+          </button>
+        ))}
+      </div>
+    </div></div>
+  );
+}
+
+export default function CampaignsPage() {
+  const { id } = useParams();
+  const navigate = useNavigate();
+  const [tab, setTab] = useState('sequences');
+  const [showBroadcastModal, setShowBroadcastModal] = useState(false);
+
+  usePageTabs(id ? null : TABS, tab, setTab);
+
+  if (id) return <CampaignAnalytics campaignId={id} />;
+
+  const handlePrimaryAction = () => {
+    if (tab === 'sequences') navigate('/campaigns/new');
+    else if (tab === 'broadcasts') setShowBroadcastModal(true);
+    else if (tab === 'templates') navigate('/templates/new');
+  };
+
+  const primaryLabel = tab === 'broadcasts' ? 'New Broadcast' : tab === 'templates' ? 'New Template' : 'New Sequence';
+
+  return (
+    <div>
+      <div className="d-flex align-items-center justify-content-end flex-wrap gap-2 mb-3">
+        <button className="btn btn-outline-secondary rounded-crm-xs text-13" onClick={() => navigate('/reports')}>
+          <i className="bi bi-bell me-1" />Drip Report
+        </button>
+        {tab !== 'builder' && (
+          <button className="btn-crm" onClick={handlePrimaryAction}><i className="bi bi-plus-lg" />{primaryLabel}</button>
         )}
       </div>
-    </>
+
+      {tab === 'sequences' && (
+        <SequencesTab
+          onOpenAnalytics={(cid) => navigate(`/campaigns/${cid}`)}
+          onOpenBuilder={(cid) => navigate(`/campaigns/${cid}/simple-builder`)}
+        />
+      )}
+      {tab === 'broadcasts' && <BroadcastsTab showCreate={showBroadcastModal} onCloseCreate={() => setShowBroadcastModal(false)} />}
+      {tab === 'templates' && <TemplatesTab />}
+      {tab === 'builder' && <BuilderPicker onOpen={(cid) => navigate(`/campaigns/${cid}/simple-builder`)} />}
+    </div>
   );
 }

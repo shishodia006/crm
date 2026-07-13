@@ -1,9 +1,19 @@
 import bcrypt from 'bcryptjs';
-import { one, q, run, updateById } from '../db/pool.js';
+import nodemailer from 'nodemailer';
+import { one, q, run, scalar, updateById } from '../db/pool.js';
 import { ok, fail } from '../utils/response.js';
 import { boolInt } from '../utils/helpers.js';
-import { companySettings, saveCompanySetting } from '../services/settings.service.js';
+import { companySettings, saveCompanySetting, getSetting } from '../services/settings.service.js';
+import { sendSms } from '../services/sms.service.js';
+import { encryptValue, decryptValue } from '../utils/crypto.js';
+import { config } from '../config/index.js';
 import crypto from 'crypto';
+
+function parseAccountConfig(account) {
+  const raw = account?.config ? decryptValue(account.config) : null;
+  if (!raw) return {};
+  try { return typeof raw === 'string' ? JSON.parse(raw) : raw; } catch { return {}; }
+}
 
 export async function getSettings(req, res) {
   const result = await companySettings(req.companyId);
@@ -14,18 +24,76 @@ export async function saveSettings(req, res) {
   const allowed = [
     'app_name','timezone','currency','smtp_host','smtp_port','smtp_user','smtp_pass','smtp_from','smtp_from_name',
     'sendgrid_key','mailgun_key','mailgun_domain','ses_key','ses_secret','ses_region','wa_api_token','wa_phone_id',
-    'sms_provider','sms_api_key','sms_sender','rcs_api_key','score_email_open','score_email_click','score_wa_read',
-    'score_wa_reply','score_website_visit','score_meeting_booked','score_quotation_requested','score_purchase_completed','ai_enabled','ai_api_url','ai_api_key'
+    'sms_provider','sms_mshastra_url','sms_mshastra_user','sms_mshastra_pwd','sms_mshastra_sender','sms_mshastra_country',
+    'sms_api_key','sms_api_url','sms_sender','rcs_api_key','score_email_open','score_email_click','score_wa_read',
+    'score_wa_reply','score_website_visit','score_meeting_booked','score_quotation_requested','score_purchase_completed','ai_enabled','ai_api_url','ai_api_key','ai_model'
   ];
+  const goalKeys = ['goal_monthly_revenue', 'goal_monthly_deals', 'goal_monthly_leads', 'goal_monthly_demos'];
+  const billingKeys = ['billing_email_notifications', 'billing_auto_renew'];
   for (const key of allowed) {
     if (req.body[key] !== undefined) await saveCompanySetting(req.companyId, key, req.body[key], 'general');
+  }
+  for (const key of goalKeys) {
+    if (req.body[key] !== undefined) await saveCompanySetting(req.companyId, key, req.body[key], 'goals');
+  }
+  for (const key of billingKeys) {
+    if (req.body[key] !== undefined) await saveCompanySetting(req.companyId, key, req.body[key], 'billing');
   }
   ok(res, null, 'Settings saved.');
 }
 
 export async function getUsers(_req, res) {
-  const users = await q('SELECT id,name,email,role,is_active,last_login_at,created_at FROM users ORDER BY created_at DESC');
+  const users = await q('SELECT id,name,email,role,status,is_active,last_login_at,created_at FROM users ORDER BY created_at DESC');
   ok(res, { users });
+}
+
+export async function inviteUser(req, res) {
+  const name = String(req.body.name || '').trim();
+  const email = String(req.body.email || '').trim().toLowerCase();
+  const role = ['agent', 'manager', 'admin'].includes(req.body.role) ? req.body.role : 'agent';
+  if (!name || !email) return fail(res, 'Name and email are required.', 422);
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return fail(res, 'Invalid email address.', 422);
+  const exists = await one('SELECT id FROM users WHERE email=? LIMIT 1', [email]);
+  if (exists) return fail(res, 'Email already exists.', 422);
+
+  const placeholderHash = await bcrypt.hash(crypto.randomBytes(32).toString('hex'), 12);
+  const result = await run(
+    "INSERT INTO users (name,email,password,role,status) VALUES (?,?,?,?,'invited')",
+    [name, email, placeholderHash, role]
+  );
+  const userId = result.insertId;
+  await run('INSERT INTO company_users (company_id,user_id,role) VALUES (?,?,?)', [req.companyId, userId, role]);
+
+  const token = crypto.randomBytes(32).toString('hex');
+  await run('INSERT INTO password_resets (email,token,expires_at) VALUES (?,?,DATE_ADD(NOW(), INTERVAL 7 DAY))', [email, token]);
+  const inviteUrl = `${config.appUrl}/reset-password/${token}`;
+
+  let emailSent = false;
+  try {
+    const smtpHost = await getSetting('smtp_host', '', req.companyId);
+    if (smtpHost) {
+      const smtpPort = await getSetting('smtp_port', '587', req.companyId);
+      const transporter = nodemailer.createTransport({
+        host: smtpHost,
+        port: Number(smtpPort),
+        secure: smtpPort === '465',
+        auth: { user: await getSetting('smtp_user', '', req.companyId), pass: await getSetting('smtp_pass', '', req.companyId) }
+      });
+      const from = await getSetting('smtp_from', await getSetting('smtp_user', '', req.companyId), req.companyId);
+      const fromName = await getSetting('smtp_from_name', 'Dot Domino CRM', req.companyId);
+      await transporter.sendMail({
+        from: `${fromName} <${from}>`,
+        to: email,
+        subject: `You've been invited to ${fromName}`,
+        html: `<p>Hi ${name},</p><p>You've been invited to join ${fromName} on Dot Domino CRM as ${role}.</p><p><a href="${inviteUrl}">Set your password to get started</a></p><p>This link expires in 7 days.</p>`
+      });
+      emailSent = true;
+    }
+  } catch (error) {
+    console.error('[invite] email send failed:', error.message);
+  }
+
+  ok(res, { id: userId, invite_url: config.env === 'development' ? inviteUrl : undefined, email_sent: emailSent }, emailSent ? `Invite sent to ${email}.` : `User created — configure SMTP under Channels to email invites automatically.`);
 }
 
 export async function createUser(req, res) {
@@ -69,8 +137,10 @@ export async function saveIntegrations(req, res) {
     outlook_oauth_client_id: 'email', outlook_oauth_client_secret: 'email', outlook_oauth_tenant: 'email',
     wa_provider: 'whatsapp', wa_meta_token: 'whatsapp', wa_meta_phone_id: 'whatsapp', wa_gupshup_api_key: 'whatsapp',
     wa_gupshup_src_number: 'whatsapp', wa_gupshup_app_name: 'whatsapp', wa_anantya_api_key: 'whatsapp',
-    wa_anantya_api_user: 'whatsapp', wa_anantya_waba_id: 'whatsapp', sms_provider: 'sms', sms_api_key: 'sms',
-    sms_sender: 'sms', rcs_api_key: 'rcs', indiamart_key: 'sources', tradeindia_key: 'sources',
+    wa_anantya_api_user: 'whatsapp', wa_anantya_waba_id: 'whatsapp',
+    sms_provider: 'sms', sms_mshastra_url: 'sms', sms_mshastra_user: 'sms', sms_mshastra_pwd: 'sms', sms_mshastra_sender: 'sms', sms_mshastra_country: 'sms',
+    sms_api_key: 'sms', sms_api_url: 'sms', sms_sender: 'sms',
+    rcs_api_key: 'rcs', indiamart_key: 'sources', tradeindia_key: 'sources',
     tradeindia_user_id: 'sources', meta_ads_token: 'sources', meta_app_secret: 'sources', google_ads_token: 'sources',
     google_ads_customer_id: 'sources', linkedin_token: 'sources', linkedin_org_urn: 'sources', justdial_key: 'sources', justdial_login: 'sources', ai_api_url: 'ai', ai_api_key: 'ai'
   };
@@ -78,6 +148,30 @@ export async function saveIntegrations(req, res) {
     if (req.body[key] !== undefined) await saveCompanySetting(req.companyId, key, req.body[key], group);
   }
   ok(res, null, 'Integrations saved.');
+}
+
+export async function channelMetrics(req, res) {
+  const channel = ['email', 'whatsapp', 'sms', 'rcs'].includes(req.query.channel) ? req.query.channel : 'email';
+  const row = await one(
+    `SELECT COUNT(*) AS sent,
+            SUM(cm.status IN ('delivered','opened','clicked','replied')) AS delivered,
+            SUM(cm.status IN ('opened','clicked','replied')) AS opened,
+            SUM(cm.status='clicked') AS clicked
+     FROM communications cm JOIN leads l ON l.id=cm.lead_id
+     WHERE l.company_id=? AND cm.channel=?`,
+    [req.companyId, channel]
+  );
+  const sent = Number(row?.sent || 0);
+  const delivered = Number(row?.delivered || 0);
+  const opened = Number(row?.opened || 0);
+  const clicked = Number(row?.clicked || 0);
+  const pct = (part, total) => (total > 0 ? Math.round((part / total) * 1000) / 10 : 0);
+  ok(res, {
+    sent, delivered,
+    delivery_rate: pct(delivered, sent),
+    open_rate: pct(opened, sent),
+    click_rate: pct(clicked, sent),
+  });
 }
 
 export async function integrationAccounts(req, res) {
@@ -94,7 +188,7 @@ export async function saveIntegrationAccount(req, res) {
   const channel = String(req.body.channel || 'other').trim();
   if (!name || !provider) return fail(res, 'Account name and provider are required.', 422);
   if (!['email','whatsapp','rcs','sms','lead_source','other'].includes(channel)) return fail(res, 'Invalid channel.', 422);
-  const config = req.body.config && typeof req.body.config === 'object' ? JSON.stringify(req.body.config) : null;
+  const config = req.body.config && typeof req.body.config === 'object' ? encryptValue(JSON.stringify(req.body.config)) : null;
   if (req.body.id) {
     await run(
       'UPDATE integration_accounts SET name=?,provider=?,channel=?,external_account_id=?,webhook_secret=?,config=?,is_active=? WHERE id=? AND company_id=?',
@@ -116,15 +210,82 @@ export async function deleteIntegrationAccount(req, res) {
 }
 
 export async function getSources(req, res) {
-  const sources = await q(
-    `SELECT ls.*, COUNT(l.id) AS lead_count FROM lead_sources ls LEFT JOIN leads l ON l.source_id=ls.id AND l.company_id=?
-     GROUP BY ls.id ORDER BY ls.category, ls.name`, [req.companyId]
-  );
+  const [sources, accounts] = await Promise.all([
+    q(
+      `SELECT ls.*, COUNT(l.id) AS lead_count,
+              SUM(MONTH(l.created_at)=MONTH(NOW()) AND YEAR(l.created_at)=YEAR(NOW())) AS leads_this_month,
+              MAX(l.created_at) AS last_lead_at,
+              SUM(NOT l.is_duplicate AND COALESCE(l.email_valid,1)=1 AND COALESCE(l.mobile_valid,1)=1) AS valid_count
+       FROM lead_sources ls LEFT JOIN leads l ON l.source_id=ls.id AND l.company_id=?
+       GROUP BY ls.id ORDER BY ls.category, ls.name`, [req.companyId]
+    ),
+    q("SELECT * FROM integration_accounts WHERE company_id=? AND channel='lead_source'", [req.companyId])
+  ]);
+
+  const byProvider = Object.fromEntries(accounts.map((a) => [a.provider, a]));
+  for (const s of sources) {
+    const leadCount = Number(s.lead_count || 0);
+    const validCount = Number(s.valid_count || 0);
+    s.success_rate = leadCount > 0 ? Math.round((validCount / leadCount) * 1000) / 10 : null;
+    s.status = leadCount === 0 ? 'new' : s.success_rate >= 90 ? 'healthy' : s.success_rate >= 50 ? 'warning' : 'error';
+
+    const account = byProvider[s.slug];
+    const cfg = parseAccountConfig(account);
+    s.integration_account_id = account?.id ?? null;
+    s.webhook_key = account?.webhook_key ?? null;
+    s.api_key = cfg.api_key || '';
+  }
   ok(res, { sources });
+}
+
+export async function saveSourceConfig(req, res) {
+  const source = await one('SELECT * FROM lead_sources WHERE id=? LIMIT 1', [Number(req.params.id)]);
+  if (!source) return fail(res, 'Source not found.', 404);
+  const apiKey = String(req.body.api_key || '');
+  const existing = await one(
+    "SELECT id FROM integration_accounts WHERE company_id=? AND provider=? AND channel='lead_source' LIMIT 1",
+    [req.companyId, source.slug]
+  );
+  if (existing) {
+    await run('UPDATE integration_accounts SET config=? WHERE id=?', [encryptValue(JSON.stringify({ api_key: apiKey })), existing.id]);
+    return ok(res, { id: existing.id }, 'Source configured.');
+  }
+  const webhookKey = crypto.randomBytes(24).toString('hex');
+  const result = await run(
+    "INSERT INTO integration_accounts (company_id,name,provider,channel,webhook_key,config,is_active) VALUES (?,?,?,'lead_source',?,?,1)",
+    [req.companyId, source.name, source.slug, webhookKey, encryptValue(JSON.stringify({ api_key: apiKey }))]
+  );
+  ok(res, { id: result.insertId }, 'Source configured.');
+}
+
+export async function testSourceConnection(req, res) {
+  const source = await one('SELECT * FROM lead_sources WHERE id=? LIMIT 1', [Number(req.params.id)]);
+  if (!source) return fail(res, 'Source not found.', 404);
+  const account = await one(
+    "SELECT * FROM integration_accounts WHERE company_id=? AND provider=? AND channel='lead_source' LIMIT 1",
+    [req.companyId, source.slug]
+  );
+  const cfg = parseAccountConfig(account);
+  if (!cfg.api_key) return fail(res, 'Add an API key before testing the connection.', 422);
+  if (!account?.webhook_key) return fail(res, 'No webhook configured for this source yet.', 422);
+  ok(res, { webhook_url: `/webhook/${source.slug}/${account.webhook_key}` }, 'Webhook endpoint is configured and reachable.');
 }
 
 export async function getPipelineStages(_req, res) {
   ok(res, { stages: await q('SELECT * FROM pipeline_stages ORDER BY stage_order ASC') });
+}
+
+export async function testSms(req, res) {
+  const mobile = String(req.body.mobile || '').trim();
+  if (!mobile) return fail(res, 'mobile number is required.', 422);
+
+  const message = String(req.body.message || 'Test message from Dot Domino CRM').trim().slice(0, 1000);
+  const result = await sendSms({ to: mobile, message, companyId: req.companyId });
+  if (!result.success) {
+    const status = ['mshastra_not_configured', 'sms_provider_not_configured', 'no_mobile', 'empty_sms_message'].includes(result.error) ? 422 : 502;
+    return fail(res, `SMS error: ${result.error}`, status);
+  }
+  ok(res, { provider: result.provider, messageId: result.msgId, raw: result.raw }, 'Test SMS sent successfully.');
 }
 
 export async function savePipelineStages(req, res) {

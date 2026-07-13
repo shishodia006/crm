@@ -2,18 +2,24 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { NavLink, Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../../hooks/useAuth.js';
 import { useToast } from '../../hooks/useToast.js';
-import { initials } from '../../utils/formatters.js';
+import { initials, timeAgo } from '../../utils/formatters.js';
 import { api } from '../../services/api.js';
+import { LogoMark } from '../common/Logo.jsx';
+import { PageHeaderContext } from '../../context/PageHeaderContext.jsx';
 
 /* ── Page title map ─────────────────────────────────────── */
 const PAGE_TITLES = {
-  '/dashboard':    { label: 'Dashboard',      icon: 'speedometer2' },
+  '/dashboard':      { label: 'Dashboard',      icon: 'speedometer2' },
+  '/conversations':  { label: 'Conversations',  icon: 'chat-dots-fill' },
   '/leads':        { label: 'Leads',           icon: 'people-fill' },
   '/pipeline':     { label: 'Pipeline',        icon: 'kanban-fill' },
+  '/database':     { label: 'Database',        icon: 'server' },
+  '/channels':     { label: 'Channels',         icon: 'broadcast' },
   '/campaigns':    { label: 'Campaigns',       icon: 'megaphone-fill' },
   '/templates':    { label: 'Templates',       icon: 'file-earmark-text-fill' },
   '/tasks':        { label: 'Tasks',           icon: 'check2-square' },
   '/reports':      { label: 'Reports',         icon: 'bar-chart-line-fill' },
+  '/analyst':      { label: 'My Analyst',       icon: 'stars' },
   '/revenue':      { label: 'Revenue',         icon: 'currency-rupee' },
   '/integrations': { label: 'Integrations',    icon: 'plug-fill' },
   '/settings':     { label: 'Settings',        icon: 'gear-fill' },
@@ -28,28 +34,34 @@ function usePageTitle() {
 }
 
 /* ── Sidebar nav sections ───────────────────────────────── */
+const TOP_NAV_ITEMS = [
+  { to: '/dashboard', icon: 'speedometer2',                  label: 'Dashboard' },
+  { to: '/reports',   icon: 'file-earmark-bar-graph-fill', label: 'Custom Reports' },
+  { to: '/analyst',   icon: 'stars',                        label: 'My Analyst' },
+];
+
 const NAV_SECTIONS = [
-  { label: 'Main', items: [
-    { to: '/dashboard', icon: 'speedometer2',          label: 'Dashboard' },
-    { to: '/leads',     icon: 'people-fill',            label: 'Leads' },
-    { to: '/pipeline',  icon: 'kanban-fill',            label: 'Pipeline' },
+  { label: 'Workspace', items: [
+    { to: '/conversations', icon: 'chat-dots-fill',   label: 'Conversations' },
+    { to: '/tasks',     icon: 'check2-square',    label: 'Tasks & To-do' },
+    { to: '/campaigns', icon: 'megaphone-fill',   label: 'Campaigns & Drip' },
+    { to: '/ai-agents', icon: 'robot',            label: 'AI Agents', adminOnly: true },
   ]},
-  { label: 'Automation', items: [
-    { to: '/campaigns', icon: 'megaphone-fill',         label: 'Campaigns' },
-    { to: '/templates', icon: 'file-earmark-text-fill', label: 'Templates' },
-    { to: '/tasks',     icon: 'check2-square',          label: 'Tasks' },
+  { label: 'Business', items: [
+    { to: '/pipeline', icon: 'briefcase-fill', label: 'Deals' },
+    { to: '/leads',    icon: 'people-fill',    label: 'Leads' },
+    { to: '/database', icon: 'server', label: 'Database' },
   ]},
-  { label: 'Analytics', items: [
-    { to: '/reports',   icon: 'bar-chart-line-fill',    label: 'Reports' },
-    { to: '/revenue',   icon: 'currency-rupee',         label: 'Revenue' },
+  { label: 'Database', items: [
+    { group: true, icon: 'diagram-3-fill', label: 'Ecosystem', children: [
+      { to: '/settings/sources', icon: 'signpost-split-fill', label: 'Sources' },
+      { to: '/channels',         icon: 'broadcast',            label: 'Channels' },
+      { to: '/integrations',     icon: 'plug-fill',            label: 'Third Party Apps' },
+    ]},
   ]},
 ];
 const ADMIN_ITEMS = [
-  { to: '/master-dashboard', icon: 'buildings-fill',    label: 'Master Dashboard' },
-  { to: '/settings',     icon: 'gear-fill',         label: 'Settings' },
-  { to: '/integrations', icon: 'plug-fill',         label: 'Integrations' },
-  { to: '/users',        icon: 'person-badge-fill', label: 'Users' },
-  { to: '/ai-agents',    icon: 'robot',             label: 'AI Agents' },
+  { to: '/settings', icon: 'gear-fill', label: 'Settings' },
 ];
 
 /* ── Lead Search ────────────────────────────────────────── */
@@ -121,6 +133,63 @@ function LeadSearch() {
                 </button>
               ))}
             </>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ── Notification bell ─────────────────────────────────── */
+function NotificationBell() {
+  const navigate = useNavigate();
+  const wrapRef = useRef(null);
+  const [open, setOpen] = useState(false);
+  const [data, setData] = useState({ unread: 0, items: [] });
+
+  const load = useCallback(() => {
+    api.get('/api/notifications').then(setData).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    load();
+    const iv = setInterval(load, 60000);
+    return () => clearInterval(iv);
+  }, [load]);
+
+  useEffect(() => {
+    const h = (e) => { if (wrapRef.current && !wrapRef.current.contains(e.target)) setOpen(false); };
+    document.addEventListener('mousedown', h);
+    return () => document.removeEventListener('mousedown', h);
+  }, []);
+
+  const openNotification = async (n) => {
+    setOpen(false);
+    if (!n.is_read) {
+      try { await api.post(`/api/notifications/${n.id}/read`, {}); load(); } catch { /* non-critical */ }
+    }
+    if (n.link) navigate(n.link);
+  };
+
+  return (
+    <div className="position-relative" ref={wrapRef}>
+      <button className="crm-bell-btn" onClick={() => setOpen((v) => !v)}>
+        <i className="bi bi-bell" />
+        {data.unread > 0 && <span className="crm-bell-badge">{data.unread > 9 ? '9+' : data.unread}</span>}
+      </button>
+      {open && (
+        <div className="crm-bell-dropdown shadow-sm">
+          <div className="crm-bell-dropdown-title">Notifications</div>
+          {data.items.length === 0 ? (
+            <div className="text-muted text-12 text-center py-4">No notifications yet.</div>
+          ) : (
+            data.items.map((n) => (
+              <button key={n.id} className={`crm-bell-item ${n.is_read ? '' : 'unread'}`} onClick={() => openNotification(n)}>
+                <div className="fw-semibold text-13">{n.title}</div>
+                {n.body && <div className="text-11 text-muted-3 text-truncate">{n.body}</div>}
+                <div className="text-10 text-muted-3 mt-1">{timeAgo(n.created_at)} ago</div>
+              </button>
+            ))
           )}
         </div>
       )}
@@ -284,7 +353,12 @@ export default function Layout() {
   const navigate = useNavigate();
   const [open, setOpen]             = useState(true);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [expandedGroups, setExpandedGroups] = useState({});
+  const [pageTabs, setPageTabs] = useState(null);
   const pageTitle = usePageTitle();
+  const monthYear = new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+
+  const toggleGroup = (label) => setExpandedGroups((p) => ({ ...p, [label]: !(p[label] ?? true) }));
 
   const handleLogout = async () => {
     try { await logout(); navigate('/login'); }
@@ -298,6 +372,7 @@ export default function Layout() {
   const isAdmin = user?.role === 'admin' || user?.role === 'superadmin';
 
   return (
+    <PageHeaderContext.Provider value={setPageTabs}>
     <div className="d-flex crm-full-vh">
 
       {/* ── Sidebar ── */}
@@ -305,11 +380,14 @@ export default function Layout() {
         {/* Brand */}
         <div className="crm-sidebar-brand">
           <div className="crm-sidebar-brand-icon">
-            <i className="bi bi-grid-3x3-gap-fill text-white text-16" />
+            <LogoMark size={20} />
           </div>
           {open && (
             <div className="overflow-hidden">
-              <div className="crm-sidebar-brand-name">Dot Domino</div>
+              <div className="crm-sidebar-brand-name">
+                <span style={{ color: '#5b9bf5' }}>DOT</span>{' '}
+                <span style={{ color: '#4ade80' }}>DOMINO</span>
+              </div>
               <div className="crm-sidebar-brand-sub">CRM PLATFORM</div>
             </div>
           )}
@@ -317,23 +395,60 @@ export default function Layout() {
 
         {/* Nav */}
         <div className="crm-sidebar-nav">
+          {TOP_NAV_ITEMS.map(({ to, icon, label }) => (
+            <NavLink key={label} to={to} end={to === '/dashboard'} title={!open ? label : undefined}
+              className={({ isActive }) => `crm-nav-link ${isActive ? 'active' : ''}`}>
+              <i className={`bi bi-${icon} flex-shrink-0 crm-nav-icon`} />
+              {open && <span className="text-truncate">{label}</span>}
+            </NavLink>
+          ))}
+          <div className="crm-nav-divider" />
+
           {NAV_SECTIONS.map((section) => (
             <div key={section.label} className="mb-2">
               {open && <span className="crm-nav-section-label">{section.label}</span>}
-              {section.items.map(({ to, icon, label }) => (
-                <NavLink key={to} to={to} title={!open ? label : undefined}
-                  className={({ isActive }) => `crm-nav-link ${isActive ? 'active' : ''}`}>
-                  <i className={`bi bi-${icon} flex-shrink-0 crm-nav-icon`} />
-                  {open && <span className="text-truncate">{label}</span>}
-                </NavLink>
-              ))}
+              {section.items.filter((item) => !item.adminOnly || isAdmin).map((item) => {
+                if (item.group) {
+                  if (!open) {
+                    return item.children.map(({ to, icon, label }) => (
+                      <NavLink key={to} to={to} title={label}
+                        className={({ isActive }) => `crm-nav-link ${isActive ? 'active' : ''}`}>
+                        <i className={`bi bi-${icon} flex-shrink-0 crm-nav-icon`} />
+                      </NavLink>
+                    ));
+                  }
+                  const isExpanded = expandedGroups[item.label] ?? true;
+                  return (
+                    <div key={item.label}>
+                      <button type="button" className="crm-nav-link crm-nav-group-toggle w-100 border-0 bg-transparent" onClick={() => toggleGroup(item.label)}>
+                        <i className={`bi bi-${item.icon} flex-shrink-0 crm-nav-icon`} />
+                        <span className="text-truncate flex-grow-1 text-start">{item.label}</span>
+                        <i className={`bi bi-chevron-${isExpanded ? 'down' : 'right'} text-10 flex-shrink-0`} />
+                      </button>
+                      {isExpanded && item.children.map(({ to, icon, label }) => (
+                        <NavLink key={to} to={to} className={({ isActive }) => `crm-nav-link crm-nav-sublink ${isActive ? 'active' : ''}`}>
+                          <i className={`bi bi-${icon} flex-shrink-0 crm-nav-icon`} />
+                          <span className="text-truncate">{label}</span>
+                        </NavLink>
+                      ))}
+                    </div>
+                  );
+                }
+                const { to, icon, label } = item;
+                return (
+                  <NavLink key={to} to={to} title={!open ? label : undefined}
+                    className={({ isActive }) => `crm-nav-link ${isActive ? 'active' : ''}`}>
+                    <i className={`bi bi-${icon} flex-shrink-0 crm-nav-icon`} />
+                    {open && <span className="text-truncate">{label}</span>}
+                  </NavLink>
+                );
+              })}
               {open && <div className="crm-nav-divider" />}
             </div>
           ))}
 
           {isAdmin && (
             <div>
-              {open && <span className="crm-nav-section-label">Admin</span>}
               {ADMIN_ITEMS.map(({ to, icon, label }) => (
                 <NavLink key={to} to={to} title={!open ? label : undefined}
                   className={({ isActive }) => `crm-nav-link ${isActive ? 'active' : ''}`}>
@@ -347,19 +462,6 @@ export default function Layout() {
 
         {/* Bottom */}
         <div className="crm-sidebar-bottom">
-          {open && (
-            <div className="crm-sidebar-user">
-              <span className="crm-sidebar-user-avatar">{initials(user?.name)}</span>
-              <div className="overflow-hidden">
-                <div className="crm-sidebar-user-name">{user?.name}</div>
-                <div className="crm-sidebar-user-email">{user?.email}</div>
-              </div>
-            </div>
-          )}
-          <button className="crm-sidebar-logout" onClick={handleLogout} title={!open ? 'Logout' : undefined}>
-            <i className="bi bi-box-arrow-right flex-shrink-0 crm-nav-icon" />
-            {open && <span>Logout</span>}
-          </button>
           <button className="crm-sidebar-collapse" onClick={() => setOpen((v) => !v)}>
             <i className={`bi bi-chevron-${open ? 'left' : 'right'} flex-shrink-0 crm-collapse-icon`} />
             {open && <span>Collapse</span>}
@@ -372,18 +474,39 @@ export default function Layout() {
 
         {/* Topbar */}
         <header className="crm-topbar">
-          <div className="d-flex align-items-center gap-2 me-auto">
-            <i className={`bi bi-${pageTitle.icon} crm-page-title-icon`} />
-            <span className="crm-page-title-text">{pageTitle.label}</span>
+          <div className="d-flex flex-column me-auto flex-shrink-0">
+            <div className="d-flex align-items-center gap-2">
+              <i className={`bi bi-${pageTitle.icon} crm-page-title-icon`} />
+              <span className="crm-page-title-text">{pageTitle.label}</span>
+            </div>
+            <div className="crm-page-subtitle">
+              {monthYear} &middot; <span className="crm-live-dot" />Live
+            </div>
           </div>
 
-          <CompanySwitcher />
+          {pageTabs && (
+            <div className="crm-tabs crm-topbar-tabs">
+              {pageTabs.tabs.map((t) => (
+                <button key={t.key} onClick={() => pageTabs.onChange(t.key)} className={`crm-tab${pageTabs.active === t.key ? ' active' : ''}`}>
+                  {t.icon && <i className={`bi bi-${t.icon}`} />}
+                  {t.label}
+                  {t.badge != null && <span className="badge badge-crm badge-purple ms-1">{t.badge}</span>}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {!pageTabs && <CompanySwitcher />}
 
           <LeadSearch />
 
-          <button className="btn-crm" onClick={() => setDrawerOpen(true)}>
-            <i className="bi bi-plus-lg" />New Lead
-          </button>
+          {!pageTabs && (
+            <button className="btn-crm" onClick={() => setDrawerOpen(true)}>
+              <i className="bi bi-plus-lg" />New Lead
+            </button>
+          )}
+
+          <NotificationBell />
 
           <div className="dropdown">
             <button className="btn btn-link text-dark text-decoration-none d-flex align-items-center gap-2 p-0" data-bs-toggle="dropdown">
@@ -416,5 +539,6 @@ export default function Layout() {
 
       <NewLeadDrawer open={drawerOpen} onClose={() => setDrawerOpen(false)} onCreated={handleLeadCreated} />
     </div>
+    </PageHeaderContext.Provider>
   );
 }

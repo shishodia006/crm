@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { asyncRoute } from '../utils/response.js';
 import { requireRoles } from '../middleware/auth.js';
 import * as pub from '../controllers/public.controller.js';
+import * as customReports from '../controllers/customReports.controller.js';
 
 const router = Router();
 const adminOnly = requireRoles('admin', 'superadmin');
@@ -17,6 +18,9 @@ router.get('/track/click/:uid', asyncRoute(pub.trackClick));
 
 // QR lead capture page (no auth)
 router.all('/qr/:source', asyncRoute(pub.qrCapture));
+
+// Custom report share links (no auth)
+router.get('/public/reports/:token', asyncRoute(customReports.publicShow));
 
 // OAuth flows (admin only)
 router.get('/oauth/:provider', adminOnly, asyncRoute(pub.oauthStart));

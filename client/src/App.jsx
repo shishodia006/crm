@@ -20,9 +20,11 @@ import DealForm from './features/pipeline/DealForm.jsx';
 import CampaignsPage from './features/campaigns/CampaignsPage.jsx';
 import CampaignForm from './features/campaigns/CampaignForm.jsx';
 import WorkflowBuilder from './features/campaigns/WorkflowBuilder.jsx';
+import SimpleBuilder from './features/campaigns/SimpleBuilder.jsx';
 import TemplatesPage from './features/templates/TemplatesPage.jsx';
 import TemplateForm from './features/templates/TemplateForm.jsx';
 import TasksPage from './features/tasks/TasksPage.jsx';
+import ConversationsPage from './features/conversations/ConversationsPage.jsx';
 import ReportsPage from './features/reports/ReportsPage.jsx';
 import SettingsPage from './features/settings/SettingsPage.jsx';
 import GeneralSettings from './features/settings/GeneralSettings.jsx';
@@ -31,6 +33,13 @@ import IntegrationsSettings from './features/settings/IntegrationsSettings.jsx';
 import SourcesSettings from './features/settings/SourcesSettings.jsx';
 import PipelineSettings from './features/settings/PipelineSettings.jsx';
 import AiAgentsSettings from './features/settings/AiAgentsSettings.jsx';
+import ChannelsPage from './features/settings/ChannelsPage.jsx';
+import ThirdPartyAppsPage from './features/settings/ThirdPartyAppsPage.jsx';
+import AnalystPage from './features/analyst/AnalystPage.jsx';
+import DatabasePage from './features/database/DatabasePage.jsx';
+import ProfileSettings from './features/settings/ProfileSettings.jsx';
+import TeamSettings from './features/settings/TeamSettings.jsx';
+import BillingSettings from './features/settings/BillingSettings.jsx';
 
 function RequireAuth({ children }) {
   const { user } = useAuth();
@@ -63,6 +72,7 @@ export default function App() {
               <Route index element={<Navigate to="/dashboard" replace />} />
               <Route path="/dashboard" element={<DashboardPage />} />
               <Route path="/master-dashboard" element={<MasterDashboardPage />} />
+              <Route path="/database" element={<DatabasePage />} />
 
               {/* Leads */}
               <Route path="/leads" element={<LeadsPage />} />
@@ -80,11 +90,15 @@ export default function App() {
               <Route path="/campaigns/new" element={<CampaignForm />} />
               <Route path="/campaigns/:id" element={<CampaignsPage />} />
               <Route path="/campaigns/:id/builder" element={<WorkflowBuilder />} />
+              <Route path="/campaigns/:id/simple-builder" element={<SimpleBuilder />} />
 
               {/* Templates */}
               <Route path="/templates" element={<TemplatesPage />} />
               <Route path="/templates/new" element={<TemplateForm />} />
               <Route path="/templates/:id" element={<TemplateForm />} />
+
+              {/* Conversations */}
+              <Route path="/conversations" element={<ConversationsPage />} />
 
               {/* Tasks */}
               <Route path="/tasks" element={<TasksPage />} />
@@ -92,20 +106,29 @@ export default function App() {
               {/* Reports */}
               <Route path="/reports" element={<ReportsPage />} />
 
+              {/* My Analyst */}
+              <Route path="/analyst" element={<AnalystPage />} />
+
               {/* Standalone admin pages */}
-              <Route path="/integrations" element={<IntegrationsSettings />} />
+              <Route path="/integrations" element={<ThirdPartyAppsPage />} />
+              <Route path="/channels" element={<ChannelsPage />} />
               <Route path="/users" element={<UsersSettings />} />
               <Route path="/ai-agents" element={<AiAgentsSettings />} />
               <Route path="/revenue" element={<ReportsPage />} />
 
               {/* Settings */}
               <Route path="/settings" element={<SettingsPage />}>
-                <Route index element={<Navigate to="/settings/general" replace />} />
+                <Route index element={<Navigate to="/settings/profile" replace />} />
+                <Route path="profile" element={<ProfileSettings />} />
+                <Route path="team" element={<TeamSettings />} />
                 <Route path="general" element={<GeneralSettings />} />
                 <Route path="users" element={<UsersSettings />} />
                 <Route path="integrations" element={<IntegrationsSettings />} />
                 <Route path="sources" element={<SourcesSettings />} />
+                <Route path="channels" element={<ChannelsPage />} />
+                <Route path="apps" element={<ThirdPartyAppsPage />} />
                 <Route path="pipeline" element={<PipelineSettings />} />
+                <Route path="billing" element={<BillingSettings />} />
               </Route>
             </Route>
 

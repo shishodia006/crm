@@ -16,6 +16,13 @@ import * as dashboard from '../controllers/dashboard.controller.js';
 import * as notifications from '../controllers/notifications.controller.js';
 import * as companies from '../controllers/companies.controller.js';
 import * as aiAgents from '../controllers/ai_agents.controller.js';
+import * as conversations from '../controllers/conversations.controller.js';
+import * as customReports from '../controllers/customReports.controller.js';
+import * as analyst from '../controllers/analyst.controller.js';
+import * as broadcasts from '../controllers/broadcasts.controller.js';
+import * as segments from '../controllers/segments.controller.js';
+import * as companyDirectory from '../controllers/companyDirectory.controller.js';
+import * as thirdPartyApps from '../controllers/thirdPartyApps.controller.js';
 
 const router = Router();
 const upload = multer({
@@ -32,6 +39,8 @@ router.get('/dashboard', requireAuth, asyncRoute(dashboard.index));
 router.get('/dashboard/master', adminOnly, asyncRoute(dashboard.master));
 router.get('/stats/daily', requireAuth, asyncRoute(dashboard.dailyStats));
 router.get('/notifications', requireAuth, asyncRoute(notifications.index));
+router.post('/notifications/read-all', requireAuth, asyncRoute(notifications.markAllRead));
+router.post('/notifications/:id/read', requireAuth, asyncRoute(notifications.markRead));
 
 // Company context and membership
 router.get('/companies', requireAuth, asyncRoute(companies.index));
@@ -65,6 +74,23 @@ router.get('/campaigns/:id', requireAuth, asyncRoute(campaigns.show));
 router.patch('/campaigns/:id', adminOnly, requireCompanyRole('manager'), asyncRoute(campaigns.update));
 router.post('/campaigns/:id/activate', adminOnly, requireCompanyRole('manager'), asyncRoute(campaigns.activate));
 router.post('/campaigns/:id/pause', adminOnly, requireCompanyRole('manager'), asyncRoute(campaigns.pause));
+
+// Broadcasts
+router.get('/broadcasts', requireAuth, asyncRoute(broadcasts.index));
+router.get('/broadcasts/segments', requireAuth, asyncRoute(broadcasts.segmentsList));
+router.get('/broadcasts/audience-preview', requireAuth, asyncRoute(broadcasts.audiencePreview));
+router.post('/broadcasts', adminOnly, requireCompanyRole('manager'), asyncRoute(broadcasts.store));
+router.post('/broadcasts/:id/send', adminOnly, requireCompanyRole('manager'), asyncRoute(broadcasts.send));
+router.delete('/broadcasts/:id', adminOnly, requireCompanyRole('manager'), asyncRoute(broadcasts.destroy));
+
+// Database: Companies directory + Lists (segments)
+router.get('/company-directory', requireAuth, asyncRoute(companyDirectory.index));
+router.get('/segments', requireAuth, asyncRoute(segments.index));
+router.post('/segments', requireAuth, requireCompanyRole('agent'), asyncRoute(segments.store));
+router.get('/segments/:id/members', requireAuth, asyncRoute(segments.members));
+router.post('/segments/:id/members', requireAuth, requireCompanyRole('agent'), asyncRoute(segments.addMembers));
+router.delete('/segments/:id/members/:leadId', requireAuth, requireCompanyRole('agent'), asyncRoute(segments.removeMember));
+router.delete('/segments/:id', requireAuth, requireCompanyRole('agent'), asyncRoute(segments.destroy));
 router.get('/campaigns/:id/builder', adminOnly, asyncRoute(campaigns.builder));
 router.post('/campaigns/:id/steps', adminOnly, requireCompanyRole('manager'), asyncRoute(campaigns.saveSteps));
 
@@ -81,6 +107,13 @@ router.post('/deals/:id/meeting', requireAuth, asyncRoute(pipeline.addMeeting));
 router.post('/deals/:id/file', requireAuth, upload.single('file'), asyncRoute(pipeline.uploadFile));
 router.post('/deals/:id/won', requireAuth, asyncRoute(pipeline.markWon));
 router.post('/deals/:id/lost', requireAuth, asyncRoute(pipeline.markLost));
+
+// Conversations
+router.get('/conversations', requireAuth, asyncRoute(conversations.index));
+router.post('/conversations', requireAuth, asyncRoute(conversations.store));
+router.get('/conversations/:id/messages', requireAuth, asyncRoute(conversations.show));
+router.post('/conversations/:id/messages', requireAuth, asyncRoute(conversations.reply));
+router.post('/conversations/:id/read', requireAuth, asyncRoute(conversations.read));
 
 // Tasks
 router.get('/tasks', requireAuth, asyncRoute(tasks.index));
@@ -99,14 +132,37 @@ router.delete('/templates/:id', adminOnly, asyncRoute(templates.destroy));
 // Reports
 router.get('/reports/:type?', requireAuth, asyncRoute(reports.report));
 
+// Custom Reports
+router.get('/custom-reports', requireAuth, asyncRoute(customReports.index));
+router.post('/custom-reports', requireAuth, asyncRoute(customReports.store));
+router.get('/custom-reports/counts', requireAuth, asyncRoute(customReports.counts));
+router.get('/custom-reports/export', requireAuth, asyncRoute(customReports.exportCsv));
+router.get('/custom-reports/:id', requireAuth, asyncRoute(customReports.show));
+router.get('/custom-reports/:id/data', requireAuth, asyncRoute(customReports.data));
+router.patch('/custom-reports/:id', requireAuth, asyncRoute(customReports.update));
+router.delete('/custom-reports/:id', requireAuth, asyncRoute(customReports.destroy));
+router.post('/custom-reports/:id/schedules', requireAuth, asyncRoute(customReports.scheduleStore));
+router.patch('/custom-reports/:id/schedules/:sid', requireAuth, asyncRoute(customReports.scheduleUpdate));
+router.delete('/custom-reports/:id/schedules/:sid', requireAuth, asyncRoute(customReports.scheduleDestroy));
+
+// My Analyst
+router.get('/analyst/sessions', requireAuth, asyncRoute(analyst.listSessions));
+router.post('/analyst/sessions', requireAuth, asyncRoute(analyst.createSession));
+router.get('/analyst/sessions/:id/messages', requireAuth, asyncRoute(analyst.listMessages));
+router.post('/analyst/sessions/:id/messages', requireAuth, asyncRoute(analyst.postMessage));
+router.delete('/analyst/sessions/:id', requireAuth, asyncRoute(analyst.destroySession));
+
 // Settings
 router.get('/settings', adminOnly, asyncRoute(settings.getSettings));
 router.post('/settings', adminOnly, asyncRoute(settings.saveSettings));
 router.get('/settings/users', adminOnly, asyncRoute(settings.getUsers));
 router.post('/settings/users', adminOnly, asyncRoute(settings.createUser));
+router.post('/settings/users/invite', adminOnly, asyncRoute(settings.inviteUser));
 router.patch('/settings/users/:id', adminOnly, asyncRoute(settings.updateUser));
 router.get('/settings/integrations', adminOnly, asyncRoute(settings.getIntegrations));
 router.post('/settings/integrations', adminOnly, asyncRoute(settings.saveIntegrations));
+router.get('/settings/channel-metrics', adminOnly, asyncRoute(settings.channelMetrics));
+router.post('/settings/test-sms', adminOnly, asyncRoute(settings.testSms));
 router.get('/settings/integration-accounts', adminOnly, asyncRoute(settings.integrationAccounts));
 router.post('/settings/integration-accounts', adminOnly, asyncRoute(settings.saveIntegrationAccount));
 router.delete('/settings/integration-accounts/:id', adminOnly, asyncRoute(settings.deleteIntegrationAccount));
@@ -117,6 +173,12 @@ router.get('/settings/ai-agents/:id/knowledge', adminOnly, asyncRoute(aiAgents.k
 router.post('/settings/ai-agents/:id/knowledge', adminOnly, asyncRoute(aiAgents.saveKnowledge));
 router.post('/settings/ai-agents/:id/preview', adminOnly, asyncRoute(aiAgents.preview));
 router.get('/settings/sources', adminOnly, asyncRoute(settings.getSources));
+router.post('/settings/sources/:id/config', adminOnly, asyncRoute(settings.saveSourceConfig));
+router.post('/settings/sources/:id/test', adminOnly, asyncRoute(settings.testSourceConnection));
+router.get('/settings/apps', adminOnly, asyncRoute(thirdPartyApps.index));
+router.post('/settings/apps/:slug/connect', adminOnly, asyncRoute(thirdPartyApps.connect));
+router.post('/settings/apps/:slug/disconnect', adminOnly, asyncRoute(thirdPartyApps.disconnect));
+router.post('/settings/apps/:slug/sync', adminOnly, asyncRoute(thirdPartyApps.sync));
 router.get('/settings/pipeline', adminOnly, asyncRoute(settings.getPipelineStages));
 router.post('/settings/pipeline', adminOnly, asyncRoute(settings.savePipelineStages));
 

@@ -149,6 +149,124 @@ function IntegrationAccounts() {
   );
 }
 
+/* ── SMS Tab ──────────────────────────────────────────── */
+function SmsTab({ form, set, saving, save, toast }) {
+  const [testMobile, setTestMobile] = useState('');
+  const [testing, setTesting]       = useState(false);
+  const [testStatus, setTestStatus] = useState(null); // null | 'ok' | 'fail'
+
+  const provider = form.sms_provider || 'mshastra';
+
+  const testSms = async () => {
+    if (!testMobile) { toast('Enter a mobile number to send the test SMS.', 'warning'); return; }
+    setTesting(true);
+    setTestStatus(null);
+    try {
+      await api.post('/api/settings/test-sms', { mobile: testMobile });
+      setTestStatus('ok');
+      toast(`Test SMS sent to ${testMobile}.`, 'success');
+    } catch (err) {
+      setTestStatus('fail');
+      toast(`Test failed: ${err.message}`, 'danger');
+    } finally {
+      setTesting(false);
+    }
+  };
+
+  return (
+    <>
+      <Card icon="phone-fill" title="Active SMS Provider">
+        <div className="col-md-4">
+          <Select
+            label="Provider"
+            name="sms_provider"
+            value={provider}
+            onChange={set}
+            options={[
+              { value: 'mshastra',  label: 'MShastra' },
+              { value: 'msg91',     label: 'MSG91' },
+              { value: 'twilio',    label: 'Twilio' },
+              { value: 'fast2sms',  label: 'Fast2SMS' },
+              { value: 'textlocal', label: 'TextLocal' },
+            ]}
+          />
+        </div>
+      </Card>
+
+      {provider === 'mshastra' && (
+        <Card icon="chat-right-text-fill" title="MShastra Configuration">
+          <div className="row g-3">
+            <div className="col-md-3">
+              <Field label="MShastra Username" name="sms_mshastra_user" value={form.sms_mshastra_user} onChange={set}
+                hint="Your MShastra login username" />
+            </div>
+            <div className="col-md-3">
+              <Field label="Password" name="sms_mshastra_pwd" type="password" value={form.sms_mshastra_pwd} onChange={set} />
+            </div>
+            <div className="col-md-3">
+              <Field label="Sender ID (DLT)" name="sms_mshastra_sender" value={form.sms_mshastra_sender} onChange={set}
+                hint="6-char DLT registered sender e.g. ATASIA" />
+            </div>
+            <div className="col-md-3">
+              <Field label="Country Code" name="sms_mshastra_country" value={form.sms_mshastra_country || '91'} onChange={set}
+                hint="91 for India (default)" />
+            </div>
+            <div className="col-md-12">
+              <Field label="API URL" name="sms_mshastra_url" value={form.sms_mshastra_url || 'https://mshastra.com/sendurl.aspx'} onChange={set} />
+            </div>
+          </div>
+
+          <div className="d-flex align-items-end gap-3 mt-2 flex-wrap">
+            <SaveBtn saving={saving} label="Save MShastra Config"
+              onClick={() => save(['sms_provider','sms_mshastra_url','sms_mshastra_user','sms_mshastra_pwd','sms_mshastra_sender','sms_mshastra_country'])} />
+
+            <div className="d-flex gap-2 align-items-end">
+              <div style={{ minWidth: 180 }}>
+                <label className="crm-label">Test Mobile Number</label>
+                <input
+                  type="tel"
+                  className="form-control crm-input"
+                  placeholder="e.g. 9876543210"
+                  value={testMobile}
+                  onChange={(e) => { setTestMobile(e.target.value); setTestStatus(null); }}
+                />
+              </div>
+              <button type="button" className="btn btn-outline-secondary btn-sm d-flex align-items-center gap-1 mb-3" onClick={testSms} disabled={testing}>
+                {testing
+                  ? <><span className="spinner-border spinner-border-sm" />Sending…</>
+                  : testStatus === 'ok'
+                    ? <><i className="bi bi-check-circle-fill text-success" />Sent</>
+                    : testStatus === 'fail'
+                      ? <><i className="bi bi-x-circle-fill text-danger" />Failed — Retry</>
+                      : <><i className="bi bi-send-fill" />Send Test SMS</>
+                }
+              </button>
+            </div>
+          </div>
+        </Card>
+      )}
+
+      {provider !== 'mshastra' && (
+        <Card icon="hdd-network-fill" title={`${provider.toUpperCase()} Configuration`}>
+          <div className="row g-3">
+            <div className="col-md-6">
+              <Field label="API URL" name="sms_api_url" value={form.sms_api_url} onChange={set} />
+            </div>
+            <div className="col-md-3">
+              <Field label="API Key / Auth Token" name="sms_api_key" type="password" value={form.sms_api_key} onChange={set} />
+            </div>
+            <div className="col-md-3">
+              <Field label="Sender ID / From Number" name="sms_sender" value={form.sms_sender} onChange={set} />
+            </div>
+          </div>
+          <SaveBtn saving={saving} label="Save SMS Config"
+            onClick={() => save(['sms_provider','sms_api_url','sms_api_key','sms_sender'])} />
+        </Card>
+      )}
+    </>
+  );
+}
+
 /* ── Tabs ─────────────────────────────────────────────── */
 const TABS = [
   { id: 'email',     icon: 'envelope-fill',  label: 'Email' },
@@ -362,34 +480,7 @@ export default function IntegrationsSettings() {
       )}
 
       {/* ── SMS ───────────────────────────────────────── */}
-      {tab === 'sms' && (
-        <Card icon="phone-fill" title="SMS Provider">
-          <div className="row g-3">
-            <div className="col-md-4">
-              <Select
-                label="Provider"
-                name="sms_provider"
-                value={form.sms_provider || 'msg91'}
-                onChange={set}
-                options={[
-                  { value: 'msg91',     label: 'MSG91' },
-                  { value: 'twilio',    label: 'Twilio' },
-                  { value: 'fast2sms',  label: 'Fast2SMS' },
-                  { value: 'textlocal', label: 'TextLocal' },
-                ]}
-              />
-            </div>
-            <div className="col-md-4">
-              <Field label="API Key / Auth Token" name="sms_api_key" type="password" value={form.sms_api_key} onChange={set} />
-            </div>
-            <div className="col-md-4">
-              <Field label="Sender ID / From" name="sms_sender" value={form.sms_sender} onChange={set} />
-            </div>
-          </div>
-          <SaveBtn saving={saving} label="Save SMS Config"
-            onClick={() => save(['sms_provider','sms_api_key','sms_sender'])} />
-        </Card>
-      )}
+      {tab === 'sms' && <SmsTab form={form} set={set} saving={saving} save={save} toast={toast} />}
 
       {/* ── RCS ───────────────────────────────────────── */}
       {tab === 'rcs' && (

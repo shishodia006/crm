@@ -18,6 +18,8 @@ CREATE TABLE IF NOT EXISTS `users` (
   `role`            ENUM('superadmin','admin','manager','agent') NOT NULL DEFAULT 'agent',
   `avatar`          VARCHAR(255) DEFAULT NULL,
   `phone`           VARCHAR(20) DEFAULT NULL,
+  `timezone`        VARCHAR(60) DEFAULT NULL,
+  `status`          ENUM('invited','active') NOT NULL DEFAULT 'active',
   `is_active`       TINYINT(1) NOT NULL DEFAULT 1,
   `last_login_at`   DATETIME DEFAULT NULL,
   `created_at`      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -56,7 +58,7 @@ CREATE TABLE IF NOT EXISTS `lead_sources` (
   `slug`        VARCHAR(60) NOT NULL UNIQUE,  -- indimart, meta_ads, csv_upload, etc.
   `category`    ENUM('marketplace','advertising','website','external','events','manual','api') NOT NULL,
   `is_active`   TINYINT(1) NOT NULL DEFAULT 1,
-  `config`      JSON DEFAULT NULL,            -- API keys, webhook secrets per source
+  `config`      LONGTEXT DEFAULT NULL,        -- unused — per-source API keys live on integration_accounts (channel='lead_source'), encrypted at rest
   `created_at`  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
@@ -162,6 +164,7 @@ CREATE TABLE IF NOT EXISTS `lead_score_events` (
 CREATE TABLE IF NOT EXISTS `segments` (
   `id`         INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
   `name`       VARCHAR(120) NOT NULL,
+  `description` VARCHAR(500) DEFAULT NULL,
   `type`       ENUM('static','dynamic') NOT NULL DEFAULT 'dynamic',
   `conditions` JSON DEFAULT NULL,   -- filter rules for dynamic segment
   `count`      INT UNSIGNED NOT NULL DEFAULT 0,
@@ -212,16 +215,20 @@ CREATE TABLE IF NOT EXISTS `campaigns` (
   `name`        VARCHAR(200) NOT NULL,
   `description` TEXT DEFAULT NULL,
   `type`        ENUM('drip','broadcast','trigger') NOT NULL DEFAULT 'drip',
-  `status`      ENUM('draft','active','paused','archived') NOT NULL DEFAULT 'draft',
+  `status`      ENUM('draft','active','paused','archived','scheduled','sent') NOT NULL DEFAULT 'draft',
   `goal`        VARCHAR(255) DEFAULT NULL,          -- 'meeting_booked', 'purchase', etc.
   `entry_rules` JSON DEFAULT NULL,                   -- auto-enroll conditions
   `exit_rules`  JSON DEFAULT NULL,
+  `template_id` INT UNSIGNED DEFAULT NULL,           -- broadcasts: single template to send
+  `audience_filter` JSON DEFAULT NULL,                -- broadcasts: {type, value} lead audience definition
+  `sent_count`  INT UNSIGNED NOT NULL DEFAULT 0,      -- broadcasts: recipients actually sent to
   `created_by`  INT UNSIGNED DEFAULT NULL,
   `start_at`    DATETIME DEFAULT NULL,
   `end_at`      DATETIME DEFAULT NULL,
   `created_at`  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `updated_at`  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   FOREIGN KEY (`created_by`) REFERENCES `users`(`id`) ON DELETE SET NULL,
+  FOREIGN KEY (`template_id`) REFERENCES `templates`(`id`) ON DELETE SET NULL,
   INDEX `idx_status` (`status`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
@@ -524,10 +531,10 @@ CREATE TABLE IF NOT EXISTS `revenue_records` (
 CREATE TABLE IF NOT EXISTS `integrations` (
   `id`         INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
   `name`       VARCHAR(100) NOT NULL,
-  `slug`       VARCHAR(60) NOT NULL UNIQUE,
+  `slug`       VARCHAR(60) NOT NULL,
   `type`       ENUM('crm','marketing','communication','marketplace','erp','analytics','other') NOT NULL,
   `is_active`  TINYINT(1) NOT NULL DEFAULT 0,
-  `config`     JSON DEFAULT NULL,   -- encrypted API keys stored here
+  `config`     LONGTEXT DEFAULT NULL,   -- encrypted at rest (see server/src/utils/crypto.js) — not JSON-typed since ciphertext isn't valid JSON
   `webhook_url`VARCHAR(500) DEFAULT NULL,
   `webhook_secret` VARCHAR(255) DEFAULT NULL,
   `last_sync`  DATETIME DEFAULT NULL,
@@ -669,10 +676,18 @@ CREATE TABLE IF NOT EXISTS `company_settings` (
 -- These clauses are also used by the migration file for existing installations.
 ALTER TABLE `leads` ADD COLUMN IF NOT EXISTS `company_id` INT UNSIGNED DEFAULT NULL, ADD INDEX IF NOT EXISTS `idx_leads_company` (`company_id`);
 ALTER TABLE `campaigns` ADD COLUMN IF NOT EXISTS `company_id` INT UNSIGNED DEFAULT NULL, ADD INDEX IF NOT EXISTS `idx_campaigns_company` (`company_id`);
+ALTER TABLE `campaigns`
+  ADD COLUMN IF NOT EXISTS `template_id` INT UNSIGNED DEFAULT NULL,
+  ADD COLUMN IF NOT EXISTS `audience_filter` JSON DEFAULT NULL,
+  ADD COLUMN IF NOT EXISTS `sent_count` INT UNSIGNED NOT NULL DEFAULT 0;
+ALTER TABLE `campaigns` MODIFY COLUMN `status` ENUM('draft','active','paused','archived','scheduled','sent') NOT NULL DEFAULT 'draft';
 ALTER TABLE `templates` ADD COLUMN IF NOT EXISTS `company_id` INT UNSIGNED DEFAULT NULL, ADD INDEX IF NOT EXISTS `idx_templates_company` (`company_id`);
 ALTER TABLE `deals` ADD COLUMN IF NOT EXISTS `company_id` INT UNSIGNED DEFAULT NULL, ADD INDEX IF NOT EXISTS `idx_deals_company` (`company_id`);
 ALTER TABLE `tasks` ADD COLUMN IF NOT EXISTS `company_id` INT UNSIGNED DEFAULT NULL, ADD INDEX IF NOT EXISTS `idx_tasks_company` (`company_id`);
 ALTER TABLE `integrations` ADD COLUMN IF NOT EXISTS `company_id` INT UNSIGNED DEFAULT NULL, ADD INDEX IF NOT EXISTS `idx_integrations_company` (`company_id`);
+ALTER TABLE `integrations` ADD UNIQUE KEY IF NOT EXISTS `uniq_company_slug` (`company_id`, `slug`);
+ALTER TABLE `segments` ADD COLUMN IF NOT EXISTS `company_id` INT UNSIGNED DEFAULT NULL, ADD INDEX IF NOT EXISTS `idx_segments_company` (`company_id`);
+ALTER TABLE `users` ADD COLUMN IF NOT EXISTS `timezone` VARCHAR(60) DEFAULT NULL, ADD COLUMN IF NOT EXISTS `status` ENUM('invited','active') NOT NULL DEFAULT 'active';
 
 INSERT INTO `companies` (`name`,`slug`) VALUES ('Default Workspace','default-workspace')
 ON DUPLICATE KEY UPDATE `name`=`name`;
@@ -705,7 +720,7 @@ CREATE TABLE IF NOT EXISTS `integration_accounts` (
   `external_account_id` VARCHAR(255) DEFAULT NULL,
   `webhook_key` CHAR(48) NOT NULL UNIQUE,
   `webhook_secret` VARCHAR(255) DEFAULT NULL,
-  `config` JSON DEFAULT NULL,
+  `config` LONGTEXT DEFAULT NULL,        -- encrypted at rest (see server/src/utils/crypto.js) — not JSON-typed since ciphertext isn't valid JSON
   `is_active` TINYINT(1) NOT NULL DEFAULT 1,
   `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -715,6 +730,10 @@ CREATE TABLE IF NOT EXISTS `integration_accounts` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 ALTER TABLE `communications` ADD COLUMN IF NOT EXISTS `integration_account_id` INT UNSIGNED DEFAULT NULL, ADD INDEX IF NOT EXISTS `idx_communications_integration_account` (`integration_account_id`);
+-- integration_accounts.config now stores encrypted ciphertext, not raw JSON — drop the JSON validity check for existing installs.
+ALTER TABLE `integration_accounts` MODIFY COLUMN `config` LONGTEXT DEFAULT NULL;
+ALTER TABLE `integrations` MODIFY COLUMN `config` LONGTEXT DEFAULT NULL;
+ALTER TABLE `lead_sources` MODIFY COLUMN `config` LONGTEXT DEFAULT NULL;
 
 CREATE TABLE IF NOT EXISTS `ai_agents` (
   `id` INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
@@ -742,6 +761,119 @@ CREATE TABLE IF NOT EXISTS `ai_knowledge_items` (
   `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   FOREIGN KEY (`agent_id`) REFERENCES `ai_agents`(`id`) ON DELETE CASCADE,
   INDEX `idx_ai_knowledge_agent` (`agent_id`,`is_active`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ============================================================
+-- CONVERSATIONS (unified inbox: email / whatsapp / sms / call)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS `conversations` (
+  `id`                    INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  `company_id`            INT UNSIGNED NOT NULL,
+  `lead_id`               INT UNSIGNED NOT NULL,
+  `channel`               ENUM('email','whatsapp','sms','call') NOT NULL DEFAULT 'email',
+  `assigned_to`           INT UNSIGNED DEFAULT NULL,
+  `status`                ENUM('open','closed') NOT NULL DEFAULT 'open',
+  `last_message_at`       DATETIME DEFAULT NULL,
+  `last_message_preview`  VARCHAR(255) DEFAULT NULL,
+  `unread_count`          INT UNSIGNED NOT NULL DEFAULT 0,
+  `created_at`            DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at`            DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  FOREIGN KEY (`company_id`)  REFERENCES `companies`(`id`) ON DELETE CASCADE,
+  FOREIGN KEY (`lead_id`)     REFERENCES `leads`(`id`)     ON DELETE CASCADE,
+  FOREIGN KEY (`assigned_to`) REFERENCES `users`(`id`)     ON DELETE SET NULL,
+  UNIQUE KEY `uniq_company_lead` (`company_id`,`lead_id`),
+  INDEX `idx_channel`      (`channel`),
+  INDEX `idx_assigned`     (`assigned_to`),
+  INDEX `idx_last_message` (`last_message_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `conversation_messages` (
+  `id`                INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  `conversation_id`   INT UNSIGNED NOT NULL,
+  `communication_id`  INT UNSIGNED DEFAULT NULL,
+  `direction`         ENUM('in','out') NOT NULL DEFAULT 'out',
+  `channel`           ENUM('email','whatsapp','sms','call') NOT NULL,
+  `body`              MEDIUMTEXT NOT NULL,
+  `sender_user_id`    INT UNSIGNED DEFAULT NULL,
+  `status`            ENUM('queued','sent','delivered','failed','received') NOT NULL DEFAULT 'sent',
+  `error_message`     VARCHAR(500) DEFAULT NULL,
+  `created_at`        DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (`conversation_id`)  REFERENCES `conversations`(`id`)  ON DELETE CASCADE,
+  FOREIGN KEY (`communication_id`) REFERENCES `communications`(`id`) ON DELETE SET NULL,
+  FOREIGN KEY (`sender_user_id`)   REFERENCES `users`(`id`)          ON DELETE SET NULL,
+  INDEX `idx_conversation` (`conversation_id`),
+  INDEX `idx_created`      (`created_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ============================================================
+-- CUSTOM REPORTS
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS `custom_reports` (
+  `id`           INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  `company_id`   INT UNSIGNED NOT NULL,
+  `owner_id`     INT UNSIGNED NOT NULL,
+  `name`         VARCHAR(150) NOT NULL,
+  `description`  VARCHAR(500) DEFAULT NULL,
+  `data_source`  ENUM('revenue_by_source','agent_leaderboard','funnel_dropoff','stalled_deals',
+                      'lead_source_roi','drip_performance','response_time_sla','regional_breakdown') NOT NULL,
+  `icon`         VARCHAR(40) DEFAULT NULL,
+  `color`        VARCHAR(7) DEFAULT NULL,
+  `visibility`   ENUM('private','team','link') NOT NULL DEFAULT 'private',
+  `status`       ENUM('draft','live') NOT NULL DEFAULT 'live',
+  `share_token`  VARCHAR(64) DEFAULT NULL UNIQUE,
+  `filters`      JSON DEFAULT NULL,
+  `last_viewed_at` DATETIME DEFAULT NULL,
+  `created_at`   DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at`   DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  FOREIGN KEY (`company_id`) REFERENCES `companies`(`id`) ON DELETE CASCADE,
+  FOREIGN KEY (`owner_id`)   REFERENCES `users`(`id`)      ON DELETE CASCADE,
+  INDEX `idx_company_owner` (`company_id`, `owner_id`),
+  INDEX `idx_visibility`    (`company_id`, `visibility`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `report_schedules` (
+  `id`            INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  `report_id`     INT UNSIGNED NOT NULL,
+  `frequency`     ENUM('daily','weekly','monthly') NOT NULL DEFAULT 'weekly',
+  `send_time`     TIME NOT NULL DEFAULT '09:00:00',
+  -- day_of_week: 0=Sunday..6=Saturday (weekly). day_of_month: 1-28 (monthly).
+  -- recipients: {"type":"team"} or {"type":"users","user_ids":[...]}
+  `day_of_week`   TINYINT UNSIGNED DEFAULT NULL,
+  `day_of_month`  TINYINT UNSIGNED DEFAULT NULL,
+  `recipients`    JSON NOT NULL,
+  `status`        ENUM('active','paused') NOT NULL DEFAULT 'active',
+  `next_send_at`  DATETIME DEFAULT NULL,
+  `last_sent_at`  DATETIME DEFAULT NULL,
+  `created_at`    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (`report_id`) REFERENCES `custom_reports`(`id`) ON DELETE CASCADE,
+  INDEX `idx_due` (`status`, `next_send_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ============================================================
+-- MY ANALYST (AI chat over real CRM data)
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS `analyst_sessions` (
+  `id`         INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  `company_id` INT UNSIGNED NOT NULL,
+  `user_id`    INT UNSIGNED NOT NULL,
+  `title`      VARCHAR(255) DEFAULT NULL,
+  `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  FOREIGN KEY (`company_id`) REFERENCES `companies`(`id`) ON DELETE CASCADE,
+  FOREIGN KEY (`user_id`)    REFERENCES `users`(`id`)      ON DELETE CASCADE,
+  INDEX `idx_company_user` (`company_id`, `user_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `analyst_messages` (
+  `id`         BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  `session_id` INT UNSIGNED NOT NULL,
+  `role`       ENUM('user','assistant') NOT NULL,
+  `content`    MEDIUMTEXT NOT NULL,
+  `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (`session_id`) REFERENCES `analyst_sessions`(`id`) ON DELETE CASCADE,
+  INDEX `idx_session` (`session_id`, `created_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 INSERT INTO `pipeline_stages` (`name`, `stage_order`, `color`, `is_won`, `is_lost`) VALUES
@@ -817,7 +949,13 @@ INSERT INTO `settings` (`key`, `value`, `group`) VALUES
   ('ses_region',  'ap-south-1',     'email'),
   ('wa_api_token','',               'whatsapp'),
   ('wa_phone_id', '',               'whatsapp'),
-  ('sms_provider','',               'sms'),
+  ('sms_provider','mshastra',       'sms'),
+  ('sms_mshastra_url',     'https://mshastra.com/sendurl.aspx', 'sms'),
+  ('sms_mshastra_user',    '',      'sms'),
+  ('sms_mshastra_pwd',     '',      'sms'),
+  ('sms_mshastra_sender',  '',      'sms'),
+  ('sms_mshastra_country', '91',    'sms'),
+  ('sms_api_url', '',               'sms'),
   ('sms_api_key', '',               'sms'),
   ('sms_sender',  '',               'sms'),
   ('rcs_api_key', '',               'rcs'),

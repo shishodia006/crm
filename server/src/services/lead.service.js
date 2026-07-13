@@ -192,7 +192,8 @@ export async function listLeads(filters = {}, page = 1, perPage = config.perPage
        (SELECT COUNT(*) FROM communications WHERE lead_id=l.id AND channel='sms') AS sms_sent,
        (SELECT COUNT(*) FROM communications WHERE lead_id=l.id AND channel='sms' AND status IN ('delivered','opened','clicked')) AS sms_delivered,
        (SELECT COUNT(*) FROM communications WHERE lead_id=l.id AND channel='rcs') AS rcs_sent,
-       (SELECT COUNT(*) FROM communications WHERE lead_id=l.id AND channel='rcs' AND status IN ('delivered','opened','clicked','replied')) AS rcs_delivered
+       (SELECT COUNT(*) FROM communications WHERE lead_id=l.id AND channel='rcs' AND status IN ('delivered','opened','clicked','replied')) AS rcs_delivered,
+       (SELECT GROUP_CONCAT(t.name, ':', t.color SEPARATOR '||') FROM lead_tags lt JOIN tags t ON t.id=lt.tag_id WHERE lt.lead_id=l.id) AS tags_csv
      FROM leads l
      LEFT JOIN lead_sources ls ON ls.id=l.source_id
      LEFT JOIN users u ON u.id=l.assigned_to

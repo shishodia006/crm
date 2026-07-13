@@ -54,27 +54,15 @@ export async function processJobs(limit = 50) {
 
 export async function segmentLead(leadId) {
   const { one } = await import('../db/pool.js');
+  const { matchesConditions } = await import('./segment.service.js');
   const lead = await one('SELECT * FROM leads WHERE id=? LIMIT 1', [leadId]);
   if (!lead) return;
-  const segments = await q("SELECT id,conditions FROM segments WHERE type='dynamic'");
+  const segments = await q("SELECT id,conditions FROM segments WHERE type='dynamic' AND company_id=?", [lead.company_id]);
   for (const segment of segments) {
     let conditions = {};
     try { conditions = JSON.parse(segment.conditions || '{}'); } catch { conditions = {}; }
-    let matches = Object.keys(conditions).length > 0;
-    for (const [field, rule] of Object.entries(conditions)) {
-      const value = lead[field];
-      const op = rule.op || 'eq';
-      const expected = rule.value;
-      const pass =
-        op === 'eq' ? value == expected :
-        op === 'neq' ? value != expected :
-        op === 'contains' ? String(value || '').toLowerCase().includes(String(expected || '').toLowerCase()) :
-        op === 'gte' ? Number(value || 0) >= Number(expected || 0) :
-        op === 'lte' ? Number(value || 0) <= Number(expected || 0) :
-        op === 'in' ? [].concat(expected).includes(value) :
-        false;
-      if (!pass) matches = false;
+    if (matchesConditions(lead, conditions)) {
+      await run('INSERT IGNORE INTO segment_leads (segment_id,lead_id) VALUES (?,?)', [segment.id, leadId]);
     }
-    if (matches) await run('INSERT IGNORE INTO segment_leads (segment_id,lead_id) VALUES (?,?)', [segment.id, leadId]);
   }
 }

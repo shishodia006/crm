@@ -3,24 +3,25 @@ import { ok, fail } from '../utils/response.js';
 import { hasRole, isAdmin } from '../utils/helpers.js';
 
 export async function index(req, res) {
-  const status = req.query.status || 'pending'; // pending | overdue | completed
-  const scope  = req.query.scope  || 'mine';    // mine | all
+  const status = req.query.status || 'open'; // open | pending | overdue | completed
+  const scope  = req.query.scope  || 'mine'; // mine | all
 
   const isManagerUp = hasRole(req.user, 'admin', 'superadmin', 'manager');
-  const userClause  = (scope === 'all' && isManagerUp)
-    ? ''
-    : 'AND (t.assigned_to = ? OR t.assigned_to IS NULL)';
-  const userParams  = (scope === 'all' && isManagerUp) ? [] : [req.user.id];
+  const useAllScope = scope === 'all' && isManagerUp;
+  const userClause  = useAllScope ? '' : 'AND (t.assigned_to = ? OR t.assigned_to IS NULL)';
+  const userParams  = useAllScope ? [] : [req.user.id];
 
   let statusClause;
-  if (status === 'overdue')   statusClause = 't.done = 0 AND t.due_at IS NOT NULL AND t.due_at < NOW()';
+  if (status === 'overdue')        statusClause = 't.done = 0 AND t.due_at IS NOT NULL AND t.due_at < NOW()';
   else if (status === 'completed') statusClause = 't.done = 1';
-  else                        statusClause = 't.done = 0 AND (t.due_at IS NULL OR t.due_at >= NOW())';
+  else if (status === 'open')      statusClause = 't.done = 0';
+  else                              statusClause = 't.done = 0 AND (t.due_at IS NULL OR t.due_at >= NOW())';
 
   const tasks = await q(
-    `SELECT t.*, l.name AS lead_name, u.name AS assigned_name
+    `SELECT t.*, l.name AS lead_name, d.title AS deal_title, d.value AS deal_value, u.name AS assigned_name
      FROM tasks t
      LEFT JOIN leads l ON l.id = t.lead_id
+     LEFT JOIN deals d ON d.id = t.deal_id
      LEFT JOIN users u ON u.id = t.assigned_to
      WHERE t.company_id=? AND ${statusClause} ${userClause}
      ORDER BY t.due_at ASC, t.created_at DESC
@@ -28,17 +29,17 @@ export async function index(req, res) {
     [req.companyId, ...userParams]
   );
 
-  // Counts for all tabs
-  const countParams = (scope === 'all' && isManagerUp) ? [] : [req.user.id, req.user.id, req.user.id];
-  const scopeFilter = (scope === 'all' && isManagerUp) ? '' : 'AND (t.assigned_to = ? OR t.assigned_to IS NULL)';
-
-  const [[{ pending }], [{ overdue }], [{ completed }]] = await Promise.all([
-    q(`SELECT COUNT(*) AS pending   FROM tasks t WHERE t.company_id=? AND t.done=0 AND (t.due_at IS NULL OR t.due_at >= NOW()) ${scopeFilter}`, [req.companyId, ...((scope === 'all' && isManagerUp) ? [] : [req.user.id])]),
-    q(`SELECT COUNT(*) AS overdue   FROM tasks t WHERE t.company_id=? AND t.done=0 AND t.due_at IS NOT NULL AND t.due_at < NOW() ${scopeFilter}`, [req.companyId, ...((scope === 'all' && isManagerUp) ? [] : [req.user.id])]),
-    q(`SELECT COUNT(*) AS completed FROM tasks t WHERE t.company_id=? AND t.done=1 ${scopeFilter}`, [req.companyId, ...((scope === 'all' && isManagerUp) ? [] : [req.user.id])]),
+  // Counts for all 4 tabs: mine (open, assigned to me), overdue (mine subset),
+  // team (open, company-wide), completed (company-wide, all time).
+  const mineFilter = 'AND (t.assigned_to = ? OR t.assigned_to IS NULL)';
+  const [[{ mine }], [{ overdue }], [{ team }], [{ completed }]] = await Promise.all([
+    q(`SELECT COUNT(*) AS mine FROM tasks t WHERE t.company_id=? AND t.done=0 ${mineFilter}`, [req.companyId, req.user.id]),
+    q(`SELECT COUNT(*) AS overdue FROM tasks t WHERE t.company_id=? AND t.done=0 AND t.due_at IS NOT NULL AND t.due_at < NOW() ${mineFilter}`, [req.companyId, req.user.id]),
+    q('SELECT COUNT(*) AS team FROM tasks t WHERE t.company_id=? AND t.done=0', [req.companyId]),
+    q('SELECT COUNT(*) AS completed FROM tasks t WHERE t.company_id=? AND t.done=1', [req.companyId]),
   ]);
 
-  ok(res, { tasks, counts: { pending: Number(pending), overdue: Number(overdue), completed: Number(completed) } });
+  ok(res, { tasks, counts: { mine: Number(mine), overdue: Number(overdue), team: Number(team), completed: Number(completed) } });
 }
 
 export async function store(req, res) {

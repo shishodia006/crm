@@ -1,6 +1,8 @@
 import express from 'express';
 import session from 'express-session';
+import MySQLStoreFactory from 'express-mysql-session';
 import path from 'path';
+import crypto from 'crypto';
 import { fileURLToPath } from 'url';
 import { config } from './config/index.js';
 import { currentUser } from './middleware/auth.js';
@@ -10,12 +12,37 @@ import routes from './routes/index.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
+// Persistent, MySQL-backed session store — the default express-session
+// MemoryStore leaks memory and forgets every session on restart/redeploy,
+// which isn't viable in production. Uses its own table (not the app's
+// `sessions` table, which has a different, user-management-only schema).
+const MySQLStore = MySQLStoreFactory(session);
+const sessionStore = new MySQLStore({
+  host: config.db.host,
+  port: config.db.port,
+  user: config.db.user,
+  password: config.db.password,
+  database: config.db.database,
+  createDatabaseTable: true,
+  schema: { tableName: 'express_sessions' },
+  clearExpired: true,
+  checkExpirationInterval: 15 * 60 * 1000
+});
+
 export function createApp() {
   const app = express();
 
   // Hostinger terminates HTTPS at a reverse proxy. Trust it so secure
   // express-session cookies are issued correctly in production.
   app.set('trust proxy', 1);
+
+  // Basic security headers (no extra dependency needed for this small set).
+  app.use((_req, res, next) => {
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('X-Frame-Options', 'DENY');
+    res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+    next();
+  });
 
   // Allow the configured frontend to call this API from a separate domain.
   // Local development keeps using the Vite proxy, while production uses APP_URL.
@@ -42,6 +69,7 @@ export function createApp() {
 
   // Session
   app.use(session({
+    store: sessionStore,
     secret: config.sessionSecret,
     resave: false,
     saveUninitialized: false,
@@ -56,7 +84,7 @@ export function createApp() {
   // CSRF token generation (on every session request)
   app.use((req, _res, next) => {
     if (!req.session.csrfToken) {
-      req.session.csrfToken = Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2);
+      req.session.csrfToken = crypto.randomBytes(32).toString('hex');
     }
     next();
   });

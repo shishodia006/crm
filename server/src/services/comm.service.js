@@ -1,8 +1,9 @@
 import nodemailer from 'nodemailer';
 import { one, run } from '../db/pool.js';
 import { config } from '../config/index.js';
-import { trackingUid } from '../utils/crypto.js';
+import { trackingUid, decryptValue } from '../utils/crypto.js';
 import { getSetting } from './settings.service.js';
+import { sendSms } from './sms.service.js';
 
 // ─── Template helpers ─────────────────────────────────────────────
 
@@ -46,7 +47,8 @@ async function getIntegrationAccount(accountId, companyId, channel) {
   );
   if (!account) return null;
   if (account.channel !== channel && account.channel !== 'other') return null;
-  try { account.config = typeof account.config === 'string' ? JSON.parse(account.config || '{}') : (account.config || {}); } catch { account.config = {}; }
+  const decrypted = account.config ? decryptValue(account.config) : '{}';
+  try { account.config = typeof decrypted === 'string' ? JSON.parse(decrypted || '{}') : (decrypted || {}); } catch { account.config = {}; }
   return account;
 }
 
@@ -376,29 +378,25 @@ export async function sendCommunication(channel, lead, template, enrollmentId = 
     }
   }
 
-  // ── SMS (configurable HTTP adapter) ───────────────────────────────
+  // ── SMS ───────────────────────────────────────────────────────────
   if (channel === 'sms') {
-    const apiUrl = account?.config?.send_url || await getSetting('sms_api_url', '', lead.company_id);
-    const apiKey = account?.config?.api_key || await getSetting('sms_api_key', '', lead.company_id);
-    const sender = account?.config?.sender || await getSetting('sms_sender', '', lead.company_id);
-    if (!apiUrl || !apiKey || !sender) {
-      await run("UPDATE communications SET status='failed', failed_reason='sms_provider_not_configured' WHERE id=?", [commId]);
-      return { delivered: false, comm_id: commId, error: 'sms_provider_not_configured' };
-    }
     try {
-      const response = await fetch(apiUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}`, ...(account?.config?.headers || {}) },
-        body: JSON.stringify({ to: normalizePhone(lead.mobile), from: sender, message: renderedBody, template_id: template?.wa_template_id || null })
+      const res = await sendSms({
+        to: lead.mobile,
+        message: renderedBody,
+        companyId: lead.company_id,
+        accountConfig: account?.config || {},
+        template,
       });
-      const raw = await response.text(); let payload = {}; try { payload = JSON.parse(raw); } catch {}
-      const messageId = payload.message_id || payload.id || payload.data?.id || null;
-      if (!response.ok) throw new Error(payload.message || raw.slice(0, 300) || `HTTP ${response.status}`);
-      await run("UPDATE communications SET status='sent', provider='sms_http', provider_msg_id=?, sent_at=NOW() WHERE id=?", [messageId, commId]);
-      return { delivered: true, comm_id: commId, provider_msg_id: messageId, error: null };
-    } catch (error) {
-      await run("UPDATE communications SET status='failed', failed_reason=? WHERE id=?", [String(error.message).slice(0, 500), commId]);
-      return { delivered: false, comm_id: commId, error: error.message };
+      if (res.success) {
+        await run("UPDATE communications SET status='sent', provider=?, provider_msg_id=?, sent_at=NOW() WHERE id=?", [res.provider || 'sms', res.msgId || null, commId]);
+        return { delivered: true, comm_id: commId, provider_msg_id: res.msgId || null, error: null };
+      }
+      await run("UPDATE communications SET status='failed', failed_reason=? WHERE id=?", [String(res.error).slice(0, 500), commId]);
+      return { delivered: false, comm_id: commId, error: res.error };
+    } catch (err) {
+      await run("UPDATE communications SET status='failed', failed_reason=? WHERE id=?", [String(err.message).slice(0, 500), commId]);
+      return { delivered: false, comm_id: commId, error: err.message };
     }
   }
 

@@ -1,6 +1,6 @@
 import crypto from 'crypto';
 import bcrypt from 'bcryptjs';
-import { one, run } from '../db/pool.js';
+import { one, run, updateById } from '../db/pool.js';
 import { ok, fail } from '../utils/response.js';
 import { normalizeHash } from '../utils/helpers.js';
 import { config } from '../config/index.js';
@@ -80,7 +80,7 @@ export async function forgotPassword(req, res) {
   if (user) {
     const token = crypto.randomBytes(32).toString('hex');
     await run('INSERT INTO password_resets (email,token,expires_at) VALUES (?,?,DATE_ADD(NOW(), INTERVAL 1 HOUR))', [email, token]);
-    resetUrl = `${config.appUrl}/auth/reset/${token}`;
+    resetUrl = `${config.appUrl}/reset-password/${token}`;
   }
   ok(res, config.env === 'development' ? { resetUrl } : null, 'If that email exists, a reset link has been sent.');
 }
@@ -97,7 +97,46 @@ export async function resetPassword(req, res) {
   const confirm = String(req.body.password_confirm || req.body.passwordConfirm || '');
   if (password.length < 8 || password !== confirm) return fail(res, 'Password must be 8+ chars and match.', 422);
   const hashed = await bcrypt.hash(password, 12);
-  await run('UPDATE users SET password=? WHERE email=?', [hashed, row.email]);
+  await run("UPDATE users SET password=?, status='active' WHERE email=?", [hashed, row.email]);
   await run('UPDATE password_resets SET used=1 WHERE token=?', [req.params.token]);
   ok(res, null, 'Password reset. Please login.');
+}
+
+export async function updateProfile(req, res) {
+  const name = req.body.name !== undefined ? String(req.body.name).trim() : undefined;
+  const email = req.body.email !== undefined ? String(req.body.email).trim().toLowerCase() : undefined;
+  const phone = req.body.phone !== undefined ? String(req.body.phone).trim() : undefined;
+  const timezone = req.body.timezone !== undefined ? String(req.body.timezone).trim() : undefined;
+
+  if (name !== undefined && !name) return fail(res, 'Name cannot be empty.', 422);
+  if (email !== undefined) {
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return fail(res, 'Valid email is required.', 422);
+    const existing = await one('SELECT id FROM users WHERE email=? AND id!=? LIMIT 1', [email, req.user.id]);
+    if (existing) return fail(res, 'Another account already uses this email.', 409);
+  }
+
+  const data = {};
+  if (name !== undefined) data.name = name;
+  if (email !== undefined) data.email = email;
+  if (phone !== undefined) data.phone = phone || null;
+  if (timezone !== undefined) data.timezone = timezone || null;
+  if (!Object.keys(data).length) return fail(res, 'Nothing to update.', 422);
+
+  await updateById('users', req.user.id, data);
+  const updated = await one('SELECT id,name,email,role,avatar,phone,timezone,is_active,last_login_at,created_at FROM users WHERE id=? LIMIT 1', [req.user.id]);
+  ok(res, { user: updated }, 'Profile updated.');
+}
+
+export async function changePassword(req, res) {
+  const current = String(req.body.current_password || '');
+  const password = String(req.body.password || '');
+  const confirm = String(req.body.password_confirm || req.body.passwordConfirm || '');
+  if (password.length < 8 || password !== confirm) return fail(res, 'New password must be 8+ chars and match.', 422);
+  const user = await one('SELECT password FROM users WHERE id=? LIMIT 1', [req.user.id]);
+  if (!user || !(await bcrypt.compare(current, normalizeHash(user.password)))) {
+    return fail(res, 'Current password is incorrect.', 401);
+  }
+  const hashed = await bcrypt.hash(password, 12);
+  await run('UPDATE users SET password=? WHERE id=?', [hashed, req.user.id]);
+  ok(res, null, 'Password changed.');
 }
