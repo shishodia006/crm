@@ -10,6 +10,13 @@ export const pool = mysql.createPool({
   multipleStatements: false
 });
 
+// Same rationale as the session store listener in app.js: an unhandled
+// 'error' event on this pool (e.g. a dropped idle connection) would
+// otherwise crash the whole process.
+pool.on('error', (err) => {
+  console.error('[db-pool]', err);
+});
+
 export async function q(sql, params = [], conn = pool) {
   const [rows] = await conn.execute(sql, params);
   return rows;

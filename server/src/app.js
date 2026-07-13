@@ -29,6 +29,13 @@ const sessionStore = new MySQLStore({
   checkExpirationInterval: 15 * 60 * 1000
 });
 
+// Without this listener, a transient DB error (idle connection dropped,
+// brief network blip) crashes the entire Node process — EventEmitter
+// throws on an unhandled 'error' event.
+sessionStore.on('error', (err) => {
+  console.error('[session-store]', err);
+});
+
 export function createApp() {
   const app = express();
 
