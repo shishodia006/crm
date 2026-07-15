@@ -14,6 +14,7 @@ import ReactFlow, {
 import 'reactflow/dist/style.css';
 import { api } from '../../services/api.js';
 import { useToast } from '../../hooks/useToast.js';
+import { useConfirm } from '../../hooks/useConfirm.js';
 import LoadingBox from '../../components/common/LoadingBox.jsx';
 
 // ─── Constants ────────────────────────────────────────────────────
@@ -35,7 +36,7 @@ const STEP_META = {
 const PALETTE = Object.entries(STEP_META).map(([type, m]) => ({ type, ...m }));
 
 const STEP_INFO = {
-  multi_send:    'Sends Email + WhatsApp + RCS all at once in a single step. Pick a template for each channel you want.',
+  multi_send:    'Sends Email + WhatsApp + RCS + SMS all at once in a single step. Pick a template for each channel you want.',
   email:         'An email is sent to the lead using a pre-written template.',
   whatsapp:      'A WhatsApp message is sent to the lead automatically.',
   rcs:           'An RCS rich message is sent via Anantya to the lead.',
@@ -147,7 +148,7 @@ function dbToFlowNodes(workflowSteps) {
     return {
       id: `db${s.id}`,
       type: s.type === 'condition' ? 'conditionNode' : 'stepNode',
-      position: { x: Number(s.x) || 220, y: Number(s.y) || 20 + i * 160 },
+      position: { x: Number(s.x) || i * LAYOUT_COL_GAP + 40, y: Number(s.y) || 220 },
       data: makeNodeData(s.type, {
         label: ad.label || STEP_META[s.type]?.label || s.type,
         template_id: String(s.template_id ?? ''),
@@ -201,11 +202,57 @@ function dbToFlowEdges(workflowSteps) {
   return edges;
 }
 
+// ─── Auto Layout (left-to-right, by connection depth) ──────────────
+const LAYOUT_COL_GAP = 260;
+const LAYOUT_ROW_GAP = 130;
+
+function autoLayout(nodes, edges) {
+  if (!nodes.length) return nodes;
+  const nodeIds = new Set(nodes.map(n => n.id));
+  const outgoing = new Map(nodes.map(n => [n.id, []]));
+  const inDegree = new Map(nodes.map(n => [n.id, 0]));
+  edges.forEach(e => {
+    if (!nodeIds.has(e.source) || !nodeIds.has(e.target)) return;
+    outgoing.get(e.source).push(e.target);
+    inDegree.set(e.target, inDegree.get(e.target) + 1);
+  });
+
+  const depth = new Map(nodes.map(n => [n.id, 0]));
+  const indeg = new Map(inDegree);
+  const queue = nodes.filter(n => indeg.get(n.id) === 0).map(n => n.id);
+  while (queue.length) {
+    const id = queue.shift();
+    for (const next of outgoing.get(id) || []) {
+      depth.set(next, Math.max(depth.get(next), depth.get(id) + 1));
+      indeg.set(next, indeg.get(next) - 1);
+      if (indeg.get(next) === 0) queue.push(next);
+    }
+  }
+
+  const columns = new Map();
+  nodes.forEach(n => {
+    const d = depth.get(n.id) || 0;
+    if (!columns.has(d)) columns.set(d, []);
+    columns.get(d).push(n);
+  });
+
+  const positioned = new Map();
+  [...columns.keys()].sort((a, b) => a - b).forEach((col) => {
+    const list = columns.get(col);
+    const totalHeight = (list.length - 1) * LAYOUT_ROW_GAP;
+    list.forEach((n, i) => {
+      positioned.set(n.id, { x: col * LAYOUT_COL_GAP + 40, y: i * LAYOUT_ROW_GAP - totalHeight / 2 + 220 });
+    });
+  });
+
+  return nodes.map(n => ({ ...n, position: positioned.get(n.id) || n.position }));
+}
+
 function templateToFlow(tplSteps) {
   const nodes = tplSteps.map((s, i) => ({
     id: uid(),
     type: s.type === 'condition' ? 'conditionNode' : 'stepNode',
-    position: { x: 220, y: 20 + i * 160 },
+    position: { x: i * LAYOUT_COL_GAP + 40, y: 220 },
     data: makeNodeData(s.type, { ...s }),
   }));
   const edges = nodes.slice(1).map((n, i) => ({
@@ -243,8 +290,8 @@ const StepNode = memo(({ data, selected }) => {
     >
       {!isExit && (
         <Handle
-          type="target" position={Position.Top} id="in"
-          style={{ background: '#94a3b8', width: 10, height: 10, border: '2px solid #fff', top: -5 }}
+          type="target" position={Position.Left} id="in"
+          style={{ background: '#94a3b8', width: 10, height: 10, border: '2px solid #fff', left: -5 }}
         />
       )}
 
@@ -289,8 +336,8 @@ const StepNode = memo(({ data, selected }) => {
 
       {!isExit && (
         <Handle
-          type="source" position={Position.Bottom} id="out"
-          style={{ background: meta.color, width: 10, height: 10, border: '2px solid #fff', bottom: -5 }}
+          type="source" position={Position.Right} id="out"
+          style={{ background: meta.color, width: 10, height: 10, border: '2px solid #fff', right: -5 }}
         />
       )}
     </div>
@@ -320,8 +367,8 @@ const ConditionNode = memo(({ data, selected }) => {
       }}
     >
       <Handle
-        type="target" position={Position.Top} id="in"
-        style={{ background: '#94a3b8', width: 10, height: 10, border: '2px solid #fff', top: -5 }}
+        type="target" position={Position.Left} id="in"
+        style={{ background: '#94a3b8', width: 10, height: 10, border: '2px solid #fff', left: -5 }}
       />
 
       <div style={{
@@ -352,15 +399,15 @@ const ConditionNode = memo(({ data, selected }) => {
           {condText}
         </div>
         <div style={{ display: 'flex', gap: 6 }}>
-          <span style={{ fontSize: 9, fontWeight: 700, color: '#15803d', background: '#d1fae5', padding: '2px 8px', borderRadius: 4 }}>YES ↓</span>
-          <span style={{ fontSize: 9, fontWeight: 700, color: '#b91c1c', background: '#fee2e2', padding: '2px 8px', borderRadius: 4 }}>NO ↓</span>
+          <span style={{ fontSize: 9, fontWeight: 700, color: '#15803d', background: '#d1fae5', padding: '2px 8px', borderRadius: 4 }}>YES →</span>
+          <span style={{ fontSize: 9, fontWeight: 700, color: '#b91c1c', background: '#fee2e2', padding: '2px 8px', borderRadius: 4 }}>NO →</span>
         </div>
       </div>
 
-      <Handle type="source" position={Position.Bottom} id="yes"
-        style={{ left: '28%', background: '#22c55e', width: 10, height: 10, border: '2px solid #fff', bottom: -5 }} />
-      <Handle type="source" position={Position.Bottom} id="no"
-        style={{ left: '72%', background: '#ef4444', width: 10, height: 10, border: '2px solid #fff', bottom: -5 }} />
+      <Handle type="source" position={Position.Right} id="yes"
+        style={{ top: '38%', background: '#22c55e', width: 10, height: 10, border: '2px solid #fff', right: -5 }} />
+      <Handle type="source" position={Position.Right} id="no"
+        style={{ top: '68%', background: '#ef4444', width: 10, height: 10, border: '2px solid #fff', right: -5 }} />
     </div>
   );
 });
@@ -369,6 +416,7 @@ const NODE_TYPES = { stepNode: StepNode, conditionNode: ConditionNode };
 
 // ─── Node Config Panel ─────────────────────────────────────────────
 function NodeConfigPanel({ node, onClose, onChange, msgTemplates, setMsgTemplates, agents, stages, integrationAccounts = [] }) {
+  const toast = useToast();
   const data = node.data;
   const meta = STEP_META[data.stepType] ?? { label: data.stepType, icon: 'circle', color: '#6b7280' };
   const isComm = ['email', 'whatsapp', 'sms', 'rcs'].includes(data.stepType);
@@ -387,9 +435,9 @@ function NodeConfigPanel({ node, onClose, onChange, msgTemplates, setMsgTemplate
         const other = prev.filter(t => t.channel !== 'whatsapp' && t.channel !== 'rcs');
         return [...other, ...(fresh.templates ?? [])];
       });
-      alert(`Synced ${r.imported ?? r.total ?? '?'} templates from Anantya.`);
+      toast(`Synced ${r.imported ?? r.total ?? '?'} templates from Anantya.`, 'success');
     } catch (e) {
-      alert('Sync failed: ' + e.message);
+      toast('Sync failed: ' + e.message, 'danger');
     } finally {
       setSyncing(false);
     }
@@ -397,38 +445,38 @@ function NodeConfigPanel({ node, onClose, onChange, msgTemplates, setMsgTemplate
 
   return (
     <div style={{
-      width: 272, flexShrink: 0,
-      background: '#fff', borderRadius: 10,
-      boxShadow: '0 2px 12px rgba(0,0,0,0.1)',
-      border: '1px solid #e2e8f0',
+      flex: '1 1 auto', minHeight: 0,
       display: 'flex', flexDirection: 'column',
+      borderTop: '1px solid #f1f5f9',
       overflow: 'hidden',
     }}>
       {/* Header */}
       <div style={{
-        display: 'flex', alignItems: 'center', gap: 8,
-        padding: '11px 14px',
-        borderBottom: '1px solid #e2e8f0',
-        background: '#f8fafc',
+        display: 'flex', alignItems: 'center', gap: 6,
+        padding: '7px 10px',
+        background: '#2563eb',
         flexShrink: 0,
       }}>
+        <span style={{ fontWeight: 800, fontSize: 10, color: '#fff', textTransform: 'uppercase', letterSpacing: '0.08em', flex: 1 }}>
+          Configure Step
+        </span>
         <span style={{
-          width: 26, height: 26, borderRadius: 6,
-          background: meta.color + '1a', color: meta.color,
+          width: 20, height: 20, borderRadius: 5,
+          background: 'rgba(255,255,255,0.2)', color: '#fff',
           display: 'flex', alignItems: 'center', justifyContent: 'center',
-          fontSize: 12, flexShrink: 0,
+          fontSize: 10, flexShrink: 0,
         }}>
           <i className={`bi bi-${meta.icon}`} />
         </span>
-        <span style={{ fontWeight: 700, fontSize: 13, color: '#1e293b', flex: 1 }}>{meta.label}</span>
         <button onClick={onClose}
-          style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#94a3b8', padding: 0, fontSize: 13 }}>
+          style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#fff', padding: 0, fontSize: 12, opacity: 0.85 }}>
           <i className="bi bi-x-lg" />
         </button>
       </div>
+      <div style={{ padding: '6px 10px 0', fontSize: 11, fontWeight: 700, color: '#1e293b', flexShrink: 0 }}>{meta.label}</div>
 
       {/* Body */}
-      <div style={{ padding: 14, overflowY: 'auto', flex: 1 }}>
+      <div style={{ padding: 10, overflowY: 'auto', flex: 1 }}>
         <p style={{ fontSize: 11, color: '#64748b', marginBottom: 14, lineHeight: 1.5 }}>
           {STEP_INFO[data.stepType]}
         </p>
@@ -710,12 +758,25 @@ function NodeConfigPanel({ node, onClose, onChange, msgTemplates, setMsgTemplate
           </div>
         )}
       </div>
+
+      {/* Apply */}
+      <div style={{ padding: 10, borderTop: '1px solid #f1f5f9', flexShrink: 0 }}>
+        <button
+          type="button"
+          className="btn btn-primary btn-sm w-100"
+          onClick={onClose}
+        >
+          <i className="bi bi-check-lg me-1" />Apply
+        </button>
+      </div>
     </div>
   );
 }
 
 // ─── Builder Canvas (inner — must be inside ReactFlowProvider) ─────
 function BuilderCanvas({ initialNodes, initialEdges, msgTemplates, setMsgTemplates, agents, stages, integrationAccounts, onBack, onSave }) {
+  const toast = useToast();
+  const confirm = useConfirm();
   const wrapperRef = useRef(null);
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
@@ -788,17 +849,24 @@ function BuilderCanvas({ initialNodes, initialEdges, msgTemplates, setMsgTemplat
 
   const addNode = useCallback((type) => {
     const id = uid();
-    setNodes(prev => [...prev, {
-      id,
-      type: type === 'condition' ? 'conditionNode' : 'stepNode',
-      position: { x: 220, y: 20 + prev.length * 160 },
-      data: makeNodeData(type),
-    }]);
+    setNodes(prev => {
+      const rightmost = prev.reduce((max, n) => Math.max(max, n.position.x), -LAYOUT_COL_GAP + 40);
+      return [...prev, {
+        id,
+        type: type === 'condition' ? 'conditionNode' : 'stepNode',
+        position: { x: rightmost + LAYOUT_COL_GAP, y: 220 },
+        data: makeNodeData(type),
+      }];
+    });
     setSelectedId(id);
   }, [setNodes]);
 
+  const runAutoLayout = useCallback(() => {
+    setNodes(prev => autoLayout(prev, edges));
+  }, [setNodes, edges]);
+
   const handleSave = async () => {
-    if (!nodes.length) { alert('Add at least one step before saving.'); return; }
+    if (!nodes.length) { toast('Add at least one step before saving.', 'warning'); return; }
     setSaving(true);
     try {
       const steps = nodes.map((n, i) => {
@@ -865,9 +933,17 @@ function BuilderCanvas({ initialNodes, initialEdges, msgTemplates, setMsgTemplat
         </span>
         <div style={{ flex: 1 }} />
         <button
+          className="btn btn-outline-secondary btn-sm"
+          style={{ fontSize: 11 }}
+          onClick={runAutoLayout}
+          title="Rearrange steps left-to-right"
+        >
+          <i className="bi bi-distribute-horizontal me-1" />Auto Layout
+        </button>
+        <button
           className="btn btn-outline-danger btn-sm"
           style={{ fontSize: 11 }}
-          onClick={() => { if (window.confirm('Clear all nodes?')) { setNodes([]); setEdges([]); setSelectedId(null); } }}
+          onClick={async () => { if (await confirm('Clear all nodes?', { title: 'Clear workflow' })) { setNodes([]); setEdges([]); setSelectedId(null); } }}
         >
           <i className="bi bi-trash me-1" />Clear
         </button>
@@ -876,21 +952,22 @@ function BuilderCanvas({ initialNodes, initialEdges, msgTemplates, setMsgTemplat
       {/* Main area */}
       <div style={{ display: 'flex', gap: 10 }}>
 
-        {/* Palette */}
+        {/* Palette + Configure Step (single left sidebar) */}
         <div style={{
-          width: 164, flexShrink: 0,
+          width: 250, flexShrink: 0,
           background: '#fff', borderRadius: 10,
           boxShadow: '0 1px 8px rgba(0,0,0,0.07)',
           border: '1px solid #e2e8f0',
           display: 'flex', flexDirection: 'column',
+          height: 'calc(100vh - 270px)', minHeight: 420,
           overflow: 'hidden',
         }}>
           <div style={{ padding: '9px 12px 7px', borderBottom: '1px solid #f1f5f9', flexShrink: 0 }}>
             <div style={{ fontSize: 9, fontWeight: 800, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.1em' }}>
-              Drag to canvas
+              Add Step
             </div>
           </div>
-          <div style={{ padding: '6px 7px', overflowY: 'auto', flex: 1 }}>
+          <div style={{ padding: '6px 7px', overflowY: 'auto', flex: selectedNode ? '0 1 auto' : 1, maxHeight: selectedNode ? 180 : 'none' }}>
             {PALETTE.map(({ type, label, icon, color }) => (
               <div
                 key={type}
@@ -929,11 +1006,25 @@ function BuilderCanvas({ initialNodes, initialEdges, msgTemplates, setMsgTemplat
               </div>
             ))}
           </div>
-          <div style={{ padding: '8px 10px', borderTop: '1px solid #f1f5f9', flexShrink: 0 }}>
-            <div style={{ fontSize: 10, color: '#94a3b8', lineHeight: 1.4 }}>
-              Drag nodes onto canvas, then connect them by dragging from the circle handles.
+
+          {selectedNode ? (
+            <NodeConfigPanel
+              node={selectedNode}
+              onClose={() => setSelectedId(null)}
+              onChange={(field, val) => updateNodeData(selectedId, field, val)}
+              msgTemplates={msgTemplates}
+              setMsgTemplates={setMsgTemplates}
+              agents={agents}
+              stages={stages}
+              integrationAccounts={integrationAccounts}
+            />
+          ) : (
+            <div style={{ padding: '8px 10px', borderTop: '1px solid #f1f5f9', flexShrink: 0 }}>
+              <div style={{ fontSize: 10, color: '#94a3b8', lineHeight: 1.4 }}>
+                Drag nodes onto canvas, then connect them by dragging from the circle handles.
+              </div>
             </div>
-          </div>
+          )}
         </div>
 
         {/* Canvas */}
@@ -970,20 +1061,6 @@ function BuilderCanvas({ initialNodes, initialEdges, msgTemplates, setMsgTemplat
             <Controls showInteractive={false} />
           </ReactFlow>
         </div>
-
-        {/* Config panel */}
-        {selectedNode && (
-          <NodeConfigPanel
-            node={selectedNode}
-            onClose={() => setSelectedId(null)}
-            onChange={(field, val) => updateNodeData(selectedId, field, val)}
-            msgTemplates={msgTemplates}
-            setMsgTemplates={setMsgTemplates}
-            agents={agents}
-            stages={stages}
-            integrationAccounts={integrationAccounts}
-          />
-        )}
       </div>
 
       {/* Save bar */}

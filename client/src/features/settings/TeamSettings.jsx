@@ -3,6 +3,7 @@ import { useResource } from '../../hooks/useResource.js';
 import LoadingBox from '../../components/common/LoadingBox.jsx';
 import { api } from '../../services/api.js';
 import { useToast } from '../../hooks/useToast.js';
+import { useConfirm } from '../../hooks/useConfirm.js';
 
 function InviteModal({ onClose, onInvited }) {
   const toast = useToast();
@@ -56,6 +57,7 @@ function InviteModal({ onClose, onInvited }) {
 
 export default function TeamSettings() {
   const toast = useToast();
+  const confirm = useConfirm();
   const { data, loading, reload } = useResource('/api/companies/members');
   const members = data?.members ?? [];
   const [showInvite, setShowInvite] = useState(false);
@@ -64,7 +66,7 @@ export default function TeamSettings() {
   const invited = members.filter((m) => m.status === 'invited').length;
 
   const removeMember = async (userId) => {
-    if (!window.confirm('Remove this team member from the company?')) return;
+    if (!(await confirm('Remove this team member from the company?', { title: 'Remove member' }))) return;
     try { await api.delete(`/api/companies/members/${userId}`); toast('Removed.', 'success'); reload(); }
     catch (err) { toast(err.message, 'danger'); }
   };

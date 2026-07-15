@@ -43,7 +43,7 @@ export default function LeadForm() {
       } else {
         const r = await api.post('/api/leads', form);
         toast('Lead created.', 'success');
-        navigate(`/leads/${r.id}`);
+        navigate(`/leads/${r.lead_id}`);
       }
     } catch (err) {
       toast(err.message || 'Save failed', 'danger');

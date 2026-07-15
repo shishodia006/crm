@@ -4,9 +4,6 @@ const TABS = [
   { to: '/settings/profile', label: 'Profile', icon: 'person' },
   { to: '/settings/team', label: 'Team', icon: 'people' },
   { to: '/settings/general', label: 'General', icon: 'sliders' },
-  { to: '/settings/sources', label: 'Sources', icon: 'diagram-2' },
-  { to: '/settings/channels', label: 'Channels', icon: 'broadcast' },
-  { to: '/settings/apps', label: 'Third Party Apps', icon: 'grid-1x2' },
   { to: '/settings/pipeline', label: 'Pipeline Stages', icon: 'kanban' },
   { to: '/settings/billing', label: 'Billing', icon: 'credit-card' },
 ];

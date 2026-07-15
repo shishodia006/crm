@@ -5,6 +5,7 @@ import LoadingBox from '../../components/common/LoadingBox.jsx';
 import { formatDate, timeAgo, money, initials } from '../../utils/formatters.js';
 import { api } from '../../services/api.js';
 import { useToast } from '../../hooks/useToast.js';
+import { useConfirm } from '../../hooks/useConfirm.js';
 
 const TABS = [
   { key: 'mine', label: 'My Tasks' },
@@ -163,6 +164,7 @@ function BoardView({ tasks, onDone, onDelete }) {
 
 export default function TasksPage() {
   const toast = useToast();
+  const confirm = useConfirm();
   const [tab, setTab] = useState('mine');
   const [boardView, setBoardView] = useState(false);
   const [showForm, setShowForm] = useState(false);
@@ -206,7 +208,7 @@ export default function TasksPage() {
   };
 
   const deleteTask = async (id) => {
-    if (!window.confirm('Delete this task?')) return;
+    if (!(await confirm('Delete this task?', { title: 'Delete task' }))) return;
     try {
       await api.delete(`/api/tasks/${id}`);
       reload();

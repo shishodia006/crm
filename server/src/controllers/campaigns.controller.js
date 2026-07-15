@@ -57,6 +57,13 @@ export async function index(req, res) {
   ok(res, { campaigns });
 }
 
+export async function destroy(req, res) {
+  const campaign = await one("SELECT id FROM campaigns WHERE id=? AND company_id=? AND type='drip' LIMIT 1", [Number(req.params.id), req.companyId]);
+  if (!campaign) return fail(res, 'Sequence not found.', 404);
+  await run('DELETE FROM campaigns WHERE id=?', [campaign.id]);
+  ok(res, null, 'Sequence deleted.');
+}
+
 export async function store(req, res) {
   const name = String(req.body.name || '').trim();
   if (!name) return fail(res, 'Campaign name required.', 422);

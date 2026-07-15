@@ -16,6 +16,7 @@ export const config = {
   cronSecret: process.env.CRON_SECRET || '',
   perPage: Number(process.env.PER_PAGE || 25),
   dripBatchSize: Number(process.env.DRIP_BATCH_SIZE || 50),
+  dedupWindowHours: Number(process.env.DEDUP_WINDOW_HOURS || 24),
   sms: {
     provider: process.env.SMS_PROVIDER || 'mshastra',
     apiUrl: process.env.SMS_API_URL || '',

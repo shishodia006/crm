@@ -4,11 +4,13 @@ import LoadingBox from '../../components/common/LoadingBox.jsx';
 import { formatDate } from '../../utils/formatters.js';
 import { api } from '../../services/api.js';
 import { useToast } from '../../hooks/useToast.js';
+import { useConfirm } from '../../hooks/useConfirm.js';
 
 const BLANK = { name: '', email: '', password: '', role: 'agent' };
 
 export default function UsersSettings() {
   const toast = useToast();
+  const confirm = useConfirm();
   const { data, loading, reload } = useResource('/api/settings/users');
   const { data: membersData, reload: reloadMembers } = useResource('/api/companies/members');
   const users = data?.users ?? [];
@@ -81,7 +83,7 @@ export default function UsersSettings() {
   };
 
   const removeCompanyMember = async (userId) => {
-    if (!window.confirm('Remove this user from the selected company?')) return;
+    if (!(await confirm('Remove this user from the selected company?', { title: 'Remove user' }))) return;
     try { await api.delete(`/api/companies/members/${userId}`); reloadMembers(); toast('Company access removed.', 'success'); }
     catch (error) { toast(error.message, 'danger'); }
   };

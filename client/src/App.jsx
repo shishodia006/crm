@@ -1,6 +1,7 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider } from './context/AuthContext.jsx';
 import { ToastProvider } from './context/ToastContext.jsx';
+import { ConfirmProvider } from './context/ConfirmContext.jsx';
 import { useAuth } from './hooks/useAuth.js';
 import Layout from './components/layout/Layout.jsx';
 import LoadingBox from './components/common/LoadingBox.jsx';
@@ -59,6 +60,7 @@ export default function App() {
   return (
     <AuthProvider>
       <ToastProvider>
+        <ConfirmProvider>
         <BrowserRouter>
           <Routes>
             {/* Guest routes */}
@@ -110,6 +112,7 @@ export default function App() {
               <Route path="/analyst" element={<AnalystPage />} />
 
               {/* Standalone admin pages */}
+              <Route path="/sources" element={<SourcesSettings />} />
               <Route path="/integrations" element={<ThirdPartyAppsPage />} />
               <Route path="/channels" element={<ChannelsPage />} />
               <Route path="/users" element={<UsersSettings />} />
@@ -124,9 +127,6 @@ export default function App() {
                 <Route path="general" element={<GeneralSettings />} />
                 <Route path="users" element={<UsersSettings />} />
                 <Route path="integrations" element={<IntegrationsSettings />} />
-                <Route path="sources" element={<SourcesSettings />} />
-                <Route path="channels" element={<ChannelsPage />} />
-                <Route path="apps" element={<ThirdPartyAppsPage />} />
                 <Route path="pipeline" element={<PipelineSettings />} />
                 <Route path="billing" element={<BillingSettings />} />
               </Route>
@@ -136,6 +136,7 @@ export default function App() {
             <Route path="*" element={<Navigate to="/dashboard" replace />} />
           </Routes>
         </BrowserRouter>
+        </ConfirmProvider>
       </ToastProvider>
     </AuthProvider>
   );

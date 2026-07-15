@@ -4,6 +4,7 @@ import LoadingBox from '../../components/common/LoadingBox.jsx';
 import { formatDate } from '../../utils/formatters.js';
 import { api } from '../../services/api.js';
 import { useToast } from '../../hooks/useToast.js';
+import { useConfirm } from '../../hooks/useConfirm.js';
 
 const CHANNEL_BADGE = { email: 'purple', whatsapp: 'won', sms: 'source', rcs: 'purple' };
 const STATUS_BADGE = { sent: 'live', scheduled: 'waiting', draft: 'draft' };
@@ -118,11 +119,12 @@ function CreateBroadcastModal({ onClose, onCreated }) {
 
 export default function BroadcastsTab({ showCreate, onCloseCreate }) {
   const toast = useToast();
+  const confirm = useConfirm();
   const { data, loading, reload } = useResource('/api/broadcasts');
   const broadcasts = data?.broadcasts ?? [];
 
   const handleSend = async (id) => {
-    if (!window.confirm('Send this broadcast now?')) return;
+    if (!(await confirm('Send this broadcast now?', { title: 'Send broadcast', danger: false, confirmLabel: 'Send' }))) return;
     try {
       const result = await api.post(`/api/broadcasts/${id}/send`, {});
       toast(`Sent to ${result.sent} of ${result.total} recipients.`, 'success');
@@ -131,7 +133,7 @@ export default function BroadcastsTab({ showCreate, onCloseCreate }) {
   };
 
   const handleDelete = async (id) => {
-    if (!window.confirm('Delete this broadcast?')) return;
+    if (!(await confirm('Delete this broadcast?', { title: 'Delete broadcast' }))) return;
     try { await api.delete(`/api/broadcasts/${id}`); reload(); }
     catch (err) { toast(err.message, 'danger'); }
   };

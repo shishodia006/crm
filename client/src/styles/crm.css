@@ -829,6 +829,7 @@
   overflow: hidden;
 }
 .crm-conv-search { position: relative; padding: 0.75rem; border-bottom: 1px solid #f1f2f6; }
+.crm-conv-search .crm-search-icon { left: calc(0.75rem + 11px); }
 .crm-conv-list-scroll { flex: 1; overflow-y: auto; }
 
 .crm-conv-item {

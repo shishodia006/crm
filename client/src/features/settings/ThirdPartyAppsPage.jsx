@@ -3,10 +3,12 @@ import { useResource } from '../../hooks/useResource.js';
 import LoadingBox from '../../components/common/LoadingBox.jsx';
 import { api } from '../../services/api.js';
 import { useToast } from '../../hooks/useToast.js';
+import { useConfirm } from '../../hooks/useConfirm.js';
 import { timeAgo } from '../../utils/formatters.js';
 
 export default function ThirdPartyAppsPage() {
   const toast = useToast();
+  const confirm = useConfirm();
   const { data, loading, reload } = useResource('/api/settings/apps');
   const apps = data?.apps ?? [];
   const [selectedSlug, setSelectedSlug] = useState(null);
@@ -22,7 +24,7 @@ export default function ThirdPartyAppsPage() {
   };
 
   const handleDisconnect = async () => {
-    if (!window.confirm(`Disconnect ${selected.name}?`)) return;
+    if (!(await confirm(`Disconnect ${selected.name}?`, { title: 'Disconnect app' }))) return;
     setBusy(true);
     try { await api.post(`/api/settings/apps/${selected.slug}/disconnect`, {}); toast(`${selected.name} disconnected.`, 'success'); reload(); }
     catch (err) { toast(err.message, 'danger'); }

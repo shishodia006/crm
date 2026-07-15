@@ -5,6 +5,7 @@ import { usePageTabs } from '../../hooks/usePageTabs.js';
 import LoadingBox from '../../components/common/LoadingBox.jsx';
 import { api } from '../../services/api.js';
 import { useToast } from '../../hooks/useToast.js';
+import { useConfirm } from '../../hooks/useConfirm.js';
 import BroadcastsTab from './BroadcastsTab.jsx';
 import TemplatesTab from './TemplatesTab.jsx';
 
@@ -55,7 +56,7 @@ const TABS = [
 
 const CHANNEL_ICON = { email: 'envelope-fill', whatsapp: 'whatsapp', sms: 'chat-dots-fill', rcs: 'phone-vibrate-fill' };
 
-function SequenceCard({ campaign, onToggleStatus, onOpenAnalytics, onOpenBuilder }) {
+function SequenceCard({ campaign, onToggleStatus, onOpenAnalytics, onOpenBuilder, onDelete }) {
   return (
     <div className="col-md-6">
       <div className="card crm-card h-100">
@@ -93,6 +94,9 @@ function SequenceCard({ campaign, onToggleStatus, onOpenAnalytics, onOpenBuilder
             <button className={`btn btn-sm flex-grow-1 ${campaign.status === 'active' ? 'btn-outline-warning' : 'btn-outline-success'}`} onClick={() => onToggleStatus(campaign)}>
               {campaign.status === 'active' ? 'Pause' : 'Resume'}
             </button>
+            <button className="btn btn-sm btn-outline-danger" title="Delete sequence" onClick={() => onDelete(campaign)}>
+              <i className="bi bi-trash3" />
+            </button>
           </div>
         </div>
       </div>
@@ -103,6 +107,7 @@ function SequenceCard({ campaign, onToggleStatus, onOpenAnalytics, onOpenBuilder
 function SequencesTab({ onOpenAnalytics, onOpenBuilder }) {
   const navigate = useNavigate();
   const toast = useToast();
+  const confirm = useConfirm();
   const { data, loading, reload } = useResource('/api/campaigns');
   const campaigns = data?.campaigns ?? [];
 
@@ -112,6 +117,12 @@ function SequencesTab({ onOpenAnalytics, onOpenBuilder }) {
       else { await api.post(`/api/campaigns/${c.id}/activate`, {}); toast('Sequence activated.', 'success'); }
       reload();
     } catch (err) { toast(err.message, 'danger'); }
+  };
+
+  const deleteSequence = async (c) => {
+    if (!(await confirm(`Delete "${c.name}"? This will remove its steps and enrollment history and cannot be undone.`, { title: 'Delete sequence' }))) return;
+    try { await api.delete(`/api/campaigns/${c.id}`); toast('Sequence deleted.', 'success'); reload(); }
+    catch (err) { toast(err.message, 'danger'); }
   };
 
   if (loading) return <LoadingBox />;
@@ -125,7 +136,7 @@ function SequencesTab({ onOpenAnalytics, onOpenBuilder }) {
       </div></div>
     );
   }
-  return <div className="row g-3">{campaigns.map((c) => <SequenceCard key={c.id} campaign={c} onToggleStatus={toggleStatus} onOpenAnalytics={onOpenAnalytics} onOpenBuilder={onOpenBuilder} />)}</div>;
+  return <div className="row g-3">{campaigns.map((c) => <SequenceCard key={c.id} campaign={c} onToggleStatus={toggleStatus} onOpenAnalytics={onOpenAnalytics} onOpenBuilder={onOpenBuilder} onDelete={deleteSequence} />)}</div>;
 }
 
 function BuilderPicker({ onOpen }) {

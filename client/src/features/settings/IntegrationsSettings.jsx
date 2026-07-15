@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { api } from '../../services/api.js';
 import { useToast } from '../../hooks/useToast.js';
+import { useConfirm } from '../../hooks/useConfirm.js';
 import LoadingBox from '../../components/common/LoadingBox.jsx';
 
 /* ── Helpers ─────────────────────────────────────────── */
@@ -92,6 +93,7 @@ const APP_URL = (import.meta.env.VITE_API_BASE || 'http://localhost:8090');
 
 function IntegrationAccounts() {
   const toast = useToast();
+  const confirm = useConfirm();
   const [accounts, setAccounts] = useState([]);
   const [form, setForm] = useState({ name: '', provider: 'meta', channel: 'whatsapp', external_account_id: '', webhook_secret: '', config_text: '{}' });
   const [busy, setBusy] = useState(false);
@@ -120,7 +122,7 @@ function IntegrationAccounts() {
   };
 
   const remove = async (id) => {
-    if (!window.confirm('Remove this integration account?')) return;
+    if (!(await confirm('Remove this integration account?', { title: 'Remove account' }))) return;
     try {
       await api.delete(`/api/settings/integration-accounts/${id}`);
       setAccounts((items) => items.filter((item) => item.id !== id));

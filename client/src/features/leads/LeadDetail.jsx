@@ -78,7 +78,7 @@ function EnrollmentModal({ leadId, enrollment: enroll, onClose }) {
 
   const channelStats = ['email','whatsapp','sms','rcs'].reduce((acc, ch) => {
     const all = comms.filter(c => c.channel === ch);
-    if (all.length) acc[ch] = {
+    acc[ch] = {
       sent: all.length,
       delivered: all.filter(c => ['delivered','opened','clicked','replied'].includes(c.status)).length,
     };

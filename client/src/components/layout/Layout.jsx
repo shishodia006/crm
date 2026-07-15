@@ -15,6 +15,7 @@ const PAGE_TITLES = {
   '/pipeline':     { label: 'Pipeline',        icon: 'kanban-fill' },
   '/database':     { label: 'Database',        icon: 'server' },
   '/channels':     { label: 'Channels',         icon: 'broadcast' },
+  '/sources':      { label: 'Sources',          icon: 'signpost-split-fill' },
   '/campaigns':    { label: 'Campaigns',       icon: 'megaphone-fill' },
   '/templates':    { label: 'Templates',       icon: 'file-earmark-text-fill' },
   '/tasks':        { label: 'Tasks',           icon: 'check2-square' },
@@ -52,12 +53,10 @@ const NAV_SECTIONS = [
     { to: '/leads',    icon: 'people-fill',    label: 'Leads' },
     { to: '/database', icon: 'server', label: 'Database' },
   ]},
-  { label: 'Database', items: [
-    { group: true, icon: 'diagram-3-fill', label: 'Ecosystem', children: [
-      { to: '/settings/sources', icon: 'signpost-split-fill', label: 'Sources' },
-      { to: '/channels',         icon: 'broadcast',            label: 'Channels' },
-      { to: '/integrations',     icon: 'plug-fill',            label: 'Third Party Apps' },
-    ]},
+  { label: 'Ecosystem', items: [
+    { to: '/sources',      icon: 'signpost-split-fill', label: 'Sources' },
+    { to: '/channels',     icon: 'broadcast',            label: 'Channels' },
+    { to: '/integrations', icon: 'plug-fill',            label: 'Third Party Apps' },
   ]},
 ];
 const ADMIN_ITEMS = [
@@ -353,12 +352,9 @@ export default function Layout() {
   const navigate = useNavigate();
   const [open, setOpen]             = useState(true);
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const [expandedGroups, setExpandedGroups] = useState({});
   const [pageTabs, setPageTabs] = useState(null);
   const pageTitle = usePageTitle();
   const monthYear = new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
-
-  const toggleGroup = (label) => setExpandedGroups((p) => ({ ...p, [label]: !(p[label] ?? true) }));
 
   const handleLogout = async () => {
     try { await logout(); navigate('/login'); }
@@ -408,32 +404,6 @@ export default function Layout() {
             <div key={section.label} className="mb-2">
               {open && <span className="crm-nav-section-label">{section.label}</span>}
               {section.items.filter((item) => !item.adminOnly || isAdmin).map((item) => {
-                if (item.group) {
-                  if (!open) {
-                    return item.children.map(({ to, icon, label }) => (
-                      <NavLink key={to} to={to} title={label}
-                        className={({ isActive }) => `crm-nav-link ${isActive ? 'active' : ''}`}>
-                        <i className={`bi bi-${icon} flex-shrink-0 crm-nav-icon`} />
-                      </NavLink>
-                    ));
-                  }
-                  const isExpanded = expandedGroups[item.label] ?? true;
-                  return (
-                    <div key={item.label}>
-                      <button type="button" className="crm-nav-link crm-nav-group-toggle w-100 border-0 bg-transparent" onClick={() => toggleGroup(item.label)}>
-                        <i className={`bi bi-${item.icon} flex-shrink-0 crm-nav-icon`} />
-                        <span className="text-truncate flex-grow-1 text-start">{item.label}</span>
-                        <i className={`bi bi-chevron-${isExpanded ? 'down' : 'right'} text-10 flex-shrink-0`} />
-                      </button>
-                      {isExpanded && item.children.map(({ to, icon, label }) => (
-                        <NavLink key={to} to={to} className={({ isActive }) => `crm-nav-link crm-nav-sublink ${isActive ? 'active' : ''}`}>
-                          <i className={`bi bi-${icon} flex-shrink-0 crm-nav-icon`} />
-                          <span className="text-truncate">{label}</span>
-                        </NavLink>
-                      ))}
-                    </div>
-                  );
-                }
                 const { to, icon, label } = item;
                 return (
                   <NavLink key={to} to={to} title={!open ? label : undefined}

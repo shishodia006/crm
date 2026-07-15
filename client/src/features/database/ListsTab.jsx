@@ -3,6 +3,7 @@ import { useResource } from '../../hooks/useResource.js';
 import LoadingBox from '../../components/common/LoadingBox.jsx';
 import { api } from '../../services/api.js';
 import { useToast } from '../../hooks/useToast.js';
+import { useConfirm } from '../../hooks/useConfirm.js';
 
 const CONDITION_FIELDS = [
   { value: 'status', label: 'Status' },
@@ -195,12 +196,13 @@ function SegmentDrawer({ segmentId, onClose, onChanged }) {
 
 export default function ListsTab({ showCreate, onCloseCreate }) {
   const toast = useToast();
+  const confirm = useConfirm();
   const { data, loading, reload } = useResource('/api/segments');
   const segments = data?.segments ?? [];
   const [openSegmentId, setOpenSegmentId] = useState(null);
 
   const handleDelete = async (id) => {
-    if (!window.confirm('Delete this list?')) return;
+    if (!(await confirm('Delete this list?', { title: 'Delete list' }))) return;
     try { await api.delete(`/api/segments/${id}`); toast('List deleted.', 'success'); reload(); }
     catch (err) { toast(err.message, 'danger'); }
   };

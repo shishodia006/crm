@@ -3,6 +3,7 @@ import { useResource } from '../../hooks/useResource.js';
 import { usePageTabs } from '../../hooks/usePageTabs.js';
 import LoadingBox from '../../components/common/LoadingBox.jsx';
 import { useToast } from '../../hooks/useToast.js';
+import { useConfirm } from '../../hooks/useConfirm.js';
 import { api } from '../../services/api.js';
 import { money, timeAgo, initials } from '../../utils/formatters.js';
 
@@ -366,6 +367,7 @@ function ScheduleModal({ report, members, onClose, onSaved }) {
 /* ── Report detail drawer ────────────────────────────────── */
 function ReportDrawer({ reportId, catalog, members, onClose, onChanged }) {
   const toast = useToast();
+  const confirm = useConfirm();
   const { data: reportData } = useResource(reportId ? `/api/custom-reports/${reportId}` : '', [reportId]);
   const { data: dataResult, loading: dataLoading } = useResource(reportId ? `/api/custom-reports/${reportId}/data` : '', [reportId]);
   const [showSchedule, setShowSchedule] = useState(false);
@@ -373,7 +375,7 @@ function ReportDrawer({ reportId, catalog, members, onClose, onChanged }) {
   const catalogEntry = catalog.find((c) => c.key === report?.data_source);
 
   const handleDelete = async () => {
-    if (!window.confirm('Delete this report? This cannot be undone.')) return;
+    if (!(await confirm('Delete this report? This cannot be undone.', { title: 'Delete report' }))) return;
     try {
       await api.delete(`/api/custom-reports/${reportId}`);
       toast('Report deleted.', 'success');

@@ -74,6 +74,7 @@ router.get('/campaigns/:id', requireAuth, asyncRoute(campaigns.show));
 router.patch('/campaigns/:id', adminOnly, requireCompanyRole('manager'), asyncRoute(campaigns.update));
 router.post('/campaigns/:id/activate', adminOnly, requireCompanyRole('manager'), asyncRoute(campaigns.activate));
 router.post('/campaigns/:id/pause', adminOnly, requireCompanyRole('manager'), asyncRoute(campaigns.pause));
+router.delete('/campaigns/:id', adminOnly, requireCompanyRole('manager'), asyncRoute(campaigns.destroy));
 
 // Broadcasts
 router.get('/broadcasts', requireAuth, asyncRoute(broadcasts.index));
