@@ -208,6 +208,18 @@
 }
 .crm-topbar-tabs .crm-tab { padding: 0.45rem 0.85rem; font-size: 13px; }
 
+/* ── Password / secret field with reveal toggle ──────────── */
+.crm-pass-wrap { position: relative; }
+.crm-pass-wrap input { padding-right: 2.3rem; width: 100%; }
+.crm-pass-eye {
+  position: absolute; right: 9px; top: 50%;
+  transform: translateY(-50%);
+  background: none; border: none; padding: 0;
+  color: #9ca3af; font-size: 14px; cursor: pointer;
+  display: flex; align-items: center;
+}
+.crm-pass-eye:hover { color: #6b7280; }
+
 /* ── Search bar ────────────────────────────────────────── */
 .crm-search-wrap { position: relative; width: 280px; }
 .crm-search-icon {
@@ -277,6 +289,36 @@
   background: linear-gradient(135deg,#4c1d95,#7c3aed);
   color: #fff; font-size: 13px; font-weight: 700;
   display: flex; align-items: center; justify-content: center;
+}
+
+/* ── User menu dropdown ────────────────────────────────── */
+.crm-user-menu {
+  padding: 6px;
+  border: 1px solid #eef0f4;
+  border-radius: 14px;
+  min-width: 230px;
+}
+.crm-user-menu-header {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 10px 12px;
+}
+.crm-user-menu-name  { font-size: 13.5px; font-weight: 700; color: #1e293b; line-height: 1.3; }
+.crm-user-menu-email { font-size: 11.5px; color: #94a3b8; }
+.crm-user-menu-divider { height: 1px; background: #f1f2f6; margin: 2px 6px 6px; }
+.crm-user-menu-item {
+  display: flex; align-items: center; gap: 10px;
+  width: 100%; border: none; background: none;
+  padding: 8px 10px; border-radius: 9px;
+  font-size: 13px; font-weight: 600; color: #dc2626;
+  text-align: left; cursor: pointer;
+  transition: background 0.15s;
+}
+.crm-user-menu-item:hover { background: #fef2f2; }
+.crm-user-menu-item-icon {
+  width: 26px; height: 26px; border-radius: 7px;
+  background: #fee2e2; color: #dc2626;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 12px; flex-shrink: 0;
 }
 
 /* ── Notification bell ────────────────────────────────── */

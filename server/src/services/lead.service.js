@@ -137,6 +137,12 @@ export async function processLead(rawData, sourceId, campaignId, req, conn = und
     }
   } else {
     leadId = await insertLead(clean, db);
+    await run(
+      `INSERT INTO tasks (company_id, title, description, lead_id, assigned_to, priority, due_at)
+       VALUES (?, ?, ?, ?, NULL, 'high', DATE_ADD(NOW(), INTERVAL 2 HOUR))`,
+      [companyId, `Welcome new lead: ${clean.name}`, 'New lead came in — reach out and send a welcome message.', leadId],
+      db
+    );
   }
 
   await enqueueJob('segment_lead', { lead_id: leadId }, db);

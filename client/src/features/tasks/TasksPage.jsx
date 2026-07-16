@@ -6,6 +6,7 @@ import { formatDate, timeAgo, money, initials } from '../../utils/formatters.js'
 import { api } from '../../services/api.js';
 import { useToast } from '../../hooks/useToast.js';
 import { useConfirm } from '../../hooks/useConfirm.js';
+import LeadTaskModal from './LeadTaskModal.jsx';
 
 const TABS = [
   { key: 'mine', label: 'My Tasks' },
@@ -64,15 +65,20 @@ function linkedToInfo(task) {
   return null;
 }
 
-function TaskRow({ task, onDone, onDelete, showAssignee }) {
+function TaskRow({ task, onDone, onDelete, onOpen, showAssignee }) {
   const overdue = isOverdue(task);
   const accent = task.done ? '#22c55e' : overdue ? '#ef4444' : isToday(task) ? '#f59e0b' : '#c7cad1';
   const linked = linkedToInfo(task);
+  const clickable = Boolean(task.lead_id);
 
   return (
-    <div className="crm-task-row" style={{ '--task-accent': accent }}>
+    <div
+      className={`crm-task-row${clickable ? ' crm-clickable-row' : ''}`}
+      style={{ '--task-accent': accent }}
+      onClick={() => clickable && onOpen(task)}
+    >
       <button
-        onClick={() => !task.done && onDone(task.id)}
+        onClick={(e) => { e.stopPropagation(); if (!task.done) onDone(task.id); }}
         title={task.done ? 'Completed' : 'Mark as done'}
         className={`crm-task-circle flex-shrink-0${overdue ? ' overdue' : ''}`}
         disabled={task.done}
@@ -92,12 +98,12 @@ function TaskRow({ task, onDone, onDelete, showAssignee }) {
         {task.done ? `Completed ${timeAgo(task.done_at)} ago` : dueLabel(task.due_at) || '—'}
       </div>
 
-      <button onClick={() => onDelete(task.id)} className="crm-task-delete flex-shrink-0"><i className="bi bi-trash3" /></button>
+      <button onClick={(e) => { e.stopPropagation(); onDelete(task.id); }} className="crm-task-delete flex-shrink-0"><i className="bi bi-trash3" /></button>
     </div>
   );
 }
 
-function TeamTable({ tasks, onDone, onDelete }) {
+function TeamTable({ tasks, onDone, onDelete, onOpen }) {
   if (!tasks.length) return <p className="text-muted text-center py-5 mb-0">No open tasks across the team.</p>;
   return (
     <div className="table-responsive">
@@ -107,8 +113,9 @@ function TeamTable({ tasks, onDone, onDelete }) {
           {tasks.map((t) => {
             const overdue = isOverdue(t);
             const linked = linkedToInfo(t);
+            const clickable = Boolean(t.lead_id);
             return (
-              <tr key={t.id}>
+              <tr key={t.id} className={clickable ? 'crm-clickable-row' : ''} onClick={() => clickable && onOpen(t)}>
                 <td className="fw-semibold text-13">{t.title}</td>
                 <td>
                   {t.assigned_name
@@ -118,7 +125,7 @@ function TeamTable({ tasks, onDone, onDelete }) {
                 <td className="text-12">{linked ? `${linked.text}${linked.extra ? ` · ${linked.extra}` : ''}` : <span className="text-muted-3">Account</span>}</td>
                 <td className={`text-12 ${overdue ? 'text-danger fw-semibold' : ''}`}>{dueLabel(t.due_at) || '—'}</td>
                 <td><span className={`badge badge-crm badge-${overdue ? 'overdue' : 'pending'}`}>{overdue ? 'Overdue' : 'Pending'}</span></td>
-                <td className="text-end">
+                <td className="text-end" onClick={(e) => e.stopPropagation()}>
                   <button className="btn btn-sm btn-outline-secondary me-1" onClick={() => onDone(t.id)}><i className="bi bi-check-lg" /></button>
                   <button className="btn btn-sm btn-outline-danger" onClick={() => onDelete(t.id)}><i className="bi bi-trash3" /></button>
                 </td>
@@ -131,7 +138,7 @@ function TeamTable({ tasks, onDone, onDelete }) {
   );
 }
 
-function BoardView({ tasks, onDone, onDelete }) {
+function BoardView({ tasks, onDone, onDelete, onOpen }) {
   const groups = groupTasks(tasks);
   if (!groups.length) return <p className="text-muted text-center py-5 mb-0">Nothing here.</p>;
   return (
@@ -143,18 +150,26 @@ function BoardView({ tasks, onDone, onDelete }) {
             <span className="badge badge-crm badge-purple">{g.items.length}</span>
           </div>
           <div className="d-flex flex-column gap-2">
-            {g.items.map((t) => (
-              <div key={t.id} className="card border-0 shadow-sm crm-deal-card text-13" style={{ '--deal-accent': g.key === 'overdue' ? '#ef4444' : g.key === 'today' ? '#f59e0b' : '#c7cad1' }}>
+            {g.items.map((t) => {
+              const clickable = Boolean(t.lead_id);
+              return (
+              <div
+                key={t.id}
+                className={`card border-0 shadow-sm crm-deal-card text-13${clickable ? ' crm-clickable-row' : ''}`}
+                style={{ '--deal-accent': g.key === 'overdue' ? '#ef4444' : g.key === 'today' ? '#f59e0b' : '#c7cad1' }}
+                onClick={() => clickable && onOpen(t)}
+              >
                 <div className="card-body p-2">
                   <div className="fw-semibold text-truncate">{t.title}</div>
                   <div className="text-11 text-muted-3 text-truncate mt-1">{linkedToInfo(t)?.text || 'Account task'}</div>
                   <div className="d-flex justify-content-between align-items-center mt-1">
                     <span className="text-11 text-muted-3">{dueLabel(t.due_at) || 'No due date'}</span>
-                    <button className="btn btn-sm p-0 text-success" onClick={() => onDone(t.id)}><i className="bi bi-check-circle" /></button>
+                    <button className="btn btn-sm p-0 text-success" onClick={(e) => { e.stopPropagation(); onDone(t.id); }}><i className="bi bi-check-circle" /></button>
                   </div>
                 </div>
               </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       ))}
@@ -170,6 +185,7 @@ export default function TasksPage() {
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState(BLANK);
   const [saving, setSaving] = useState(false);
+  const [activeTask, setActiveTask] = useState(null);
 
   const statusParam = tab === 'mine' ? 'open' : tab === 'overdue' ? 'overdue' : tab === 'team' ? 'open' : 'completed';
   const scopeParam = tab === 'team' || tab === 'completed' ? 'all' : 'mine';
@@ -269,24 +285,26 @@ export default function TasksPage() {
         <div className="card crm-card">
           <div className="card-body p-4">
             {tab === 'team' ? (
-              <TeamTable tasks={tasks} onDone={markDone} onDelete={deleteTask} />
+              <TeamTable tasks={tasks} onDone={markDone} onDelete={deleteTask} onOpen={setActiveTask} />
             ) : tab === 'mine' && boardView ? (
-              <BoardView tasks={tasks} onDone={markDone} onDelete={deleteTask} />
+              <BoardView tasks={tasks} onDone={markDone} onDelete={deleteTask} onOpen={setActiveTask} />
             ) : tasks.length === 0 ? (
               <p className="text-muted text-center py-5 mb-0">Nothing here.</p>
             ) : groups ? (
               groups.map((g) => (
                 <div key={g.key} className="mb-4">
                   <div className="crm-task-section-label">{g.label}</div>
-                  {g.items.map((t) => <TaskRow key={t.id} task={t} onDone={markDone} onDelete={deleteTask} />)}
+                  {g.items.map((t) => <TaskRow key={t.id} task={t} onDone={markDone} onDelete={deleteTask} onOpen={setActiveTask} />)}
                 </div>
               ))
             ) : (
-              tasks.map((t) => <TaskRow key={t.id} task={t} onDone={markDone} onDelete={deleteTask} showAssignee={tab === 'completed'} />)
+              tasks.map((t) => <TaskRow key={t.id} task={t} onDone={markDone} onDelete={deleteTask} onOpen={setActiveTask} showAssignee={tab === 'completed'} />)
             )}
           </div>
         </div>
       )}
+
+      {activeTask && <LeadTaskModal task={activeTask} onClose={() => setActiveTask(null)} />}
     </div>
   );
 }

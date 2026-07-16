@@ -117,11 +117,10 @@ export default function ContactsTab({ companyFilter, onClearCompanyFilter, showA
         ) : (
           <div className="table-responsive">
             <table className="table align-middle mb-0 crm-table">
-              <thead><tr><th></th><th>Contact</th><th>Company</th><th>Email</th><th>Phone</th><th>Tags</th></tr></thead>
+              <thead><tr><th>Contact</th><th>Company</th><th>Email</th><th>Phone</th><th>Tags</th></tr></thead>
               <tbody>
                 {contacts.map((c) => (
                   <tr key={c.id} className="crm-clickable-row" onClick={() => navigate(`/leads/${c.id}`)}>
-                    <td onClick={(e) => e.stopPropagation()}><input type="checkbox" className="form-check-input" /></td>
                     <td>
                       <div className="d-flex align-items-center gap-2">
                         <span className="crm-agent-avatar">{initials(c.name)}</span>

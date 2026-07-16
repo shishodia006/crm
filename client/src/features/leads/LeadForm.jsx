@@ -26,7 +26,7 @@ export default function LeadForm() {
       api.get(`/api/leads/${id}`).then((d) => {
         const l = d.lead;
         setForm({ ...BLANK, ...l });
-      }).catch(() => navigate('/leads')).finally(() => setLoading(false));
+      }).catch((err) => { toast(err.message || 'Could not load this lead.', 'danger'); navigate('/leads'); }).finally(() => setLoading(false));
     }
   }, [id, isEdit, navigate]);
 
@@ -108,7 +108,7 @@ export default function LeadForm() {
               </div>
             </div>
             <div className="mt-4 d-flex gap-2">
-              <button className="btn btn-primary" disabled={saving}>
+              <button className="btn-crm" disabled={saving}>
                 {saving ? 'Saving…' : 'Save Lead'}
               </button>
               <button type="button" className="btn btn-outline-secondary" onClick={() => navigate(-1)}>

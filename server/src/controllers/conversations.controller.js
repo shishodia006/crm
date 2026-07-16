@@ -35,15 +35,24 @@ export async function store(req, res) {
   const conversation = await getOrCreateConversation(req.companyId, leadId, channel);
 
   const body = String(req.body.message || '').trim();
+  const templateId = req.body.template_id ? Number(req.body.template_id) : null;
   let message = null;
   let delivered = null;
-  if (body) {
-    const result = await sendReply(req.companyId, conversation.id, req.user.id, body);
+  if (body || templateId) {
+    const result = await sendReply(req.companyId, conversation.id, req.user.id, body, templateId);
+    if (result.error) {
+      const messages = {
+        template_required: 'A template is required to message a lead on this channel.',
+        template_not_found: 'Selected template was not found.',
+        lead_not_found: 'Lead not found on this conversation.',
+      };
+      return fail(res, messages[result.error] || result.error, 422);
+    }
     message = result.message;
     delivered = result.delivered;
   }
 
-  ok(res, { id: conversation.id, message, delivered }, 'Conversation ready.');
+  ok(res, { id: conversation.id, message, delivered }, delivered === false ? 'Message could not be delivered.' : 'Conversation ready.');
 }
 
 export async function reply(req, res) {

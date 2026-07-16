@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { api } from '../../services/api.js';
 import { useToast } from '../../hooks/useToast.js';
+import { useConfirm } from '../../hooks/useConfirm.js';
 import LoadingBox from '../../components/common/LoadingBox.jsx';
 import { formatDateTime, scoreClass, scoreLabel } from '../../utils/formatters.js';
 
@@ -293,6 +294,7 @@ export default function LeadDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
   const toast = useToast();
+  const confirm = useConfirm();
   const [lead, setLead]             = useState(null);
   const [campaigns, setCampaigns]   = useState([]);
   const [enrollments, setEnrollments] = useState([]);
@@ -308,14 +310,14 @@ export default function LeadDetail() {
         setCampaigns(d.campaigns ?? []);
         setEnrollments(d.enrollments ?? []);
       })
-      .catch(() => navigate('/leads'))
+      .catch((err) => { toast(err.message || 'Could not load this lead.', 'danger'); navigate('/leads'); })
       .finally(() => setLoading(false));
   }, [id]);
 
   useEffect(() => { reload(); }, [reload]);
 
   const handleDelete = async () => {
-    if (!confirm('Delete this lead? This cannot be undone.')) return;
+    if (!(await confirm('Delete this lead? This cannot be undone.', { title: 'Delete lead' }))) return;
     try {
       await api.delete(`/api/leads/${id}`);
       toast('Lead deleted.', 'success');
@@ -489,7 +491,7 @@ export default function LeadDetail() {
                     <option value="">— Select Campaign —</option>
                     {campaigns.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
                   </select>
-                  <button className="btn btn-primary btn-sm w-100" onClick={handleEnroll}>Enroll</button>
+                  <button className="btn-crm btn-crm-sm w-100 justify-content-center" onClick={handleEnroll}>Enroll</button>
                 </div>
               </div>
             </div>

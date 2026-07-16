@@ -22,11 +22,10 @@ export default function CompaniesTab({ onViewContacts }) {
       ) : (
         <div className="table-responsive">
           <table className="table align-middle mb-0 crm-table">
-            <thead><tr><th></th><th>Company</th><th>Industry</th><th>Contacts</th><th>Deals</th><th>Value</th></tr></thead>
+            <thead><tr><th>Company</th><th>Industry</th><th>Contacts</th><th>Deals</th><th>Value</th></tr></thead>
             <tbody>
               {companies.map((c) => (
                 <tr key={c.name} className="crm-clickable-row" onClick={() => onViewContacts(c.name)}>
-                  <td onClick={(e) => e.stopPropagation()}><input type="checkbox" className="form-check-input" /></td>
                   <td className="fw-semibold text-13 crm-link">{c.name}</td>
                   <td className="text-13">{c.industry || '—'}</td>
                   <td className="text-13">{c.contacts}</td>

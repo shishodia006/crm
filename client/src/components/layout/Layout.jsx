@@ -254,7 +254,7 @@ function NewLeadDrawer({ open, onClose, onCreated }) {
     try {
       const r = await api.post('/api/leads', form);
       toast('Lead created successfully.', 'success');
-      onCreated?.(r?.id); onClose();
+      onCreated?.(r?.lead_id); onClose();
     } catch (err) { toast(err.message || 'Failed to create lead.', 'danger'); }
     finally { setSaving(false); }
   };
@@ -483,18 +483,21 @@ export default function Layout() {
               <span className="crm-topbar-avatar">{initials(user?.name)}</span>
               <i className="bi bi-chevron-down text-10 text-silver" />
             </button>
-            <ul className="dropdown-menu dropdown-menu-end shadow-sm min-w-200">
+            <ul className="dropdown-menu dropdown-menu-end shadow-sm crm-user-menu">
               <li>
-                <div className="px-3 py-2">
-                  <div className="fw-semibold text-13">{user?.name}</div>
-                  <div className="text-muted text-11">{user?.email}</div>
+                <div className="crm-user-menu-header">
+                  <span className="crm-topbar-avatar flex-shrink-0">{initials(user?.name)}</span>
+                  <div className="min-w-0">
+                    <div className="crm-user-menu-name text-truncate">{user?.name}</div>
+                    <div className="crm-user-menu-email text-truncate">{user?.email}</div>
+                  </div>
                 </div>
               </li>
-              <li><hr className="dropdown-divider" /></li>
-              <li><NavLink to="/settings" className="dropdown-item"><i className="bi bi-gear me-2" />Settings</NavLink></li>
+              <li><div className="crm-user-menu-divider" /></li>
               <li>
-                <button className="dropdown-item text-danger" onClick={handleLogout}>
-                  <i className="bi bi-box-arrow-right me-2" />Sign out
+                <button className="crm-user-menu-item" onClick={handleLogout}>
+                  <span className="crm-user-menu-item-icon"><i className="bi bi-box-arrow-right" /></span>
+                  Sign out
                 </button>
               </li>
             </ul>

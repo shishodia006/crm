@@ -39,10 +39,10 @@ export default function TemplatesTab() {
   const { data, loading, reload } = useResource(`/api/templates?channel=${channel}`, [channel]);
   const templates = data?.templates ?? [];
 
-  const syncWa = async () => {
+  const syncWa = async (syncChannel) => {
     try {
-      const r = await api.get('/api/templates/wa-sync?save=1');
-      toast(`Synced ${r.imported ?? 0} WhatsApp templates.`, 'success');
+      const r = await api.get(`/api/templates/wa-sync?save=1&channel=${syncChannel}`);
+      toast(`Synced ${r.imported ?? 0} ${syncChannel === 'rcs' ? 'RCS' : 'WhatsApp'} templates.`, 'success');
       reload();
     } catch (err) { toast(err.message, 'danger'); }
   };
@@ -55,8 +55,11 @@ export default function TemplatesTab() {
             {c || 'All'}
           </button>
         ))}
-        <button className="btn btn-sm btn-outline-success rounded-crm-xs ms-auto" onClick={syncWa}>
+        <button className="btn btn-sm btn-outline-success rounded-crm-xs ms-auto" onClick={() => syncWa('whatsapp')}>
           <i className="bi bi-whatsapp me-1" />Sync WhatsApp
+        </button>
+        <button className="btn-crm-outline btn-crm-sm" onClick={() => syncWa('rcs')}>
+          <i className="bi bi-phone-vibrate me-1" />Sync RCS
         </button>
       </div>
 

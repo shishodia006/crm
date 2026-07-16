@@ -54,7 +54,7 @@ export default function QuickForm({ fields, onSubmit, submitLabel = 'Save', clas
           )}
         </div>
       ))}
-      <button className="btn btn-primary" disabled={saving}>
+      <button className="btn-crm" disabled={saving}>
         {saving ? <><span className="spinner-border spinner-border-sm me-1" />Saving…</> : submitLabel}
       </button>
     </form>

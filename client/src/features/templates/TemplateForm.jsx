@@ -34,7 +34,7 @@ export default function TemplateForm() {
         setForm({ ...BLANK, ...d.template });
         setVarCount(parseVarCount(d.template.variables));
       })
-      .catch(() => navigate('/templates'))
+      .catch((err) => { toast(err.message || 'Could not load this template.', 'danger'); navigate('/templates'); })
       .finally(() => setLoading(false));
   }, [id, isEdit, navigate]);
 
@@ -191,7 +191,7 @@ export default function TemplateForm() {
               </div>
             </div>
             <div className="mt-4 d-flex gap-2">
-              <button className="btn btn-primary" disabled={saving}>{saving ? 'Saving…' : 'Save Template'}</button>
+              <button className="btn-crm" disabled={saving}>{saving ? 'Saving…' : 'Save Template'}</button>
               <button type="button" className="btn btn-outline-secondary" onClick={() => navigate(-1)}>Cancel</button>
             </div>
           </form>

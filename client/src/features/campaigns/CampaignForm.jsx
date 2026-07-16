@@ -225,7 +225,7 @@ export default function CampaignForm() {
             </div>
 
             <div className="d-flex gap-2">
-              <button className="btn btn-primary px-4" disabled={saving}>
+              <button className="btn-crm px-4" disabled={saving}>
                 {saving ? 'Creating…' : 'Create & Build Workflow →'}
               </button>
               <button type="button" className="btn btn-outline-secondary" onClick={() => navigate(-1)}>

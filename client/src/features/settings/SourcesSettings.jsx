@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react';
 import { useResource } from '../../hooks/useResource.js';
 import LoadingBox from '../../components/common/LoadingBox.jsx';
+import PasswordInput from '../../components/common/PasswordInput.jsx';
 import { api } from '../../services/api.js';
 import { useToast } from '../../hooks/useToast.js';
 import { timeAgo } from '../../utils/formatters.js';
@@ -93,7 +94,7 @@ export default function SourcesSettings() {
                   </div>
                   <div className="mb-3">
                     <label className="crm-label">API Key</label>
-                    <input type="password" className="crm-input" value={currentApiKey} onChange={(e) => setApiKey(e.target.value)} placeholder="Not configured" />
+                    <PasswordInput className="crm-input" value={currentApiKey} onChange={(e) => setApiKey(e.target.value)} placeholder="Not configured" />
                     <div className="form-text text-11">Used to authenticate leads pushed from {selected.name}.</div>
                   </div>
                   <div className="mb-3">

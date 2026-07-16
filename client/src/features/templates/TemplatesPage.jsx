@@ -16,10 +16,10 @@ export default function TemplatesPage() {
   const { data, loading, reload } = useResource(`/api/templates?channel=${channel}`, [channel]);
   const templates = data?.templates ?? [];
 
-  const syncWa = async () => {
+  const syncWa = async (syncChannel) => {
     try {
-      const r = await api.get('/api/templates/wa-sync?save=1');
-      toast(`Synced ${r.imported ?? 0} WhatsApp templates.`, 'success');
+      const r = await api.get(`/api/templates/wa-sync?save=1&channel=${syncChannel}`);
+      toast(`Synced ${r.imported ?? 0} ${syncChannel === 'rcs' ? 'RCS' : 'WhatsApp'} templates.`, 'success');
       reload();
     } catch (err) {
       toast(err.message, 'danger');
@@ -54,10 +54,13 @@ export default function TemplatesPage() {
     <>
       <div className="d-flex align-items-center mb-4 gap-2 flex-wrap">
         <h4 className="fw-bold mb-0 me-auto">Templates</h4>
-        <button className="btn btn-outline-success btn-sm" onClick={syncWa}>
+        <button className="btn btn-outline-success btn-sm" onClick={() => syncWa('whatsapp')}>
           <i className="bi bi-whatsapp me-1" />Sync WhatsApp
         </button>
-        <button className="btn btn-primary btn-sm" onClick={() => navigate('/templates/new')}>
+        <button className="btn-crm-outline" onClick={() => syncWa('rcs')}>
+          <i className="bi bi-phone-vibrate me-1" />Sync RCS
+        </button>
+        <button className="btn-crm btn-crm-sm" onClick={() => navigate('/templates/new')}>
           <i className="bi bi-plus-lg me-1" />New Template
         </button>
       </div>
@@ -67,7 +70,7 @@ export default function TemplatesPage() {
           {CHANNELS.map((c) => (
             <button
               key={c || 'all'}
-              className={`btn btn-sm ${channel === c ? 'btn-primary' : 'btn-outline-secondary'}`}
+              className={channel === c ? 'btn-crm btn-crm-sm' : 'btn btn-outline-secondary btn-sm'}
               onClick={() => setChannel(c)}
             >
               {c || 'All'}

@@ -426,16 +426,17 @@ function NodeConfigPanel({ node, onClose, onChange, msgTemplates, setMsgTemplate
   const selectedTpl = filteredTpls.find(t => String(t.id) === String(data.template_id));
   const [syncing, setSyncing] = useState(false);
 
-  const syncAnantya = async () => {
+  const syncAnantya = async (channelOverride) => {
+    const channel = channelOverride || data.stepType;
     setSyncing(true);
     try {
-      const r = await api.get('/api/templates/wa-sync?save=1');
-      const fresh = await api.get('/api/templates?channel=' + data.stepType);
+      const r = await api.get(`/api/templates/wa-sync?save=1&channel=${channel}`);
+      const fresh = await api.get('/api/templates?channel=' + channel);
       setMsgTemplates(prev => {
-        const other = prev.filter(t => t.channel !== 'whatsapp' && t.channel !== 'rcs');
+        const other = prev.filter(t => t.channel !== channel);
         return [...other, ...(fresh.templates ?? [])];
       });
-      toast(`Synced ${r.imported ?? r.total ?? '?'} templates from Anantya.`, 'success');
+      toast(`Synced ${r.imported ?? r.total ?? '?'} templates from Anantya as ${channel}.`, 'success');
     } catch (e) {
       toast('Sync failed: ' + e.message, 'danger');
     } finally {
@@ -592,7 +593,7 @@ function NodeConfigPanel({ node, onClose, onChange, msgTemplates, setMsgTemplate
                 </span>
                 {['whatsapp','rcs'].includes(ch) && (
                   <button
-                    onClick={syncAnantya} disabled={syncing}
+                    onClick={() => syncAnantya(ch)} disabled={syncing}
                     style={{ fontSize: 10, color: '#7c3aed', background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontWeight: 600, marginLeft: 'auto' }}
                   >
                     <i className="bi bi-arrow-repeat me-1" />{syncing ? 'Syncing…' : 'Sync'}
@@ -763,7 +764,7 @@ function NodeConfigPanel({ node, onClose, onChange, msgTemplates, setMsgTemplate
       <div style={{ padding: 10, borderTop: '1px solid #f1f5f9', flexShrink: 0 }}>
         <button
           type="button"
-          className="btn btn-primary btn-sm w-100"
+          className="btn-crm btn-crm-sm w-100 justify-content-center"
           onClick={onClose}
         >
           <i className="bi bi-check-lg me-1" />Apply
@@ -1121,7 +1122,7 @@ export default function WorkflowBuilder() {
           setView('builder');
         }
       })
-      .catch(() => navigate('/campaigns'))
+      .catch((err) => { toast(err.message || 'Could not load this campaign.', 'danger'); navigate('/campaigns'); })
       .finally(() => setLoading(false));
   }, [id, navigate]);
 

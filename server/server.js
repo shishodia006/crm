@@ -40,6 +40,7 @@ if (isCron) {
       '╠══════════════════════════════════════════════╣',
       `║  Backend   →  http://localhost:${config.port}         ║`,
       `║  Frontend  →  http://localhost:5173           ║`,
+      `║  App URL   →  ${config.appUrl.padEnd(30)}║`,
       `║  MySQL     →  ${config.db?.host || '127.0.0.1'}:${config.db?.port || 3306}              ${dbStatus.startsWith('✓') ? '    ║' : '║'}`,
       `║  DB Status →  ${dbStatus.padEnd(30)}║`,
       `║  Mode      →  ${config.env.padEnd(30)}║`,
@@ -50,6 +51,13 @@ if (isCron) {
       '',
     ];
     console.log(lines.join('\n'));
+    if (config.env === 'production' && config.appUrl.includes('localhost')) {
+      console.warn(
+        '⚠️  APP_URL is still set to localhost in production. ' +
+        'Invite/reset-password emails will contain broken links. ' +
+        'Set APP_URL in server/.env to your live domain (e.g. https://panel.thepitchpoint.com) and restart.'
+      );
+    }
     startDripScheduler();
   });
 }

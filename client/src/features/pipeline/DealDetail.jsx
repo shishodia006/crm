@@ -2,6 +2,8 @@ import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { api } from '../../services/api.js';
 import { useToast } from '../../hooks/useToast.js';
+import { useConfirm } from '../../hooks/useConfirm.js';
+import { usePrompt } from '../../hooks/usePrompt.js';
 import LoadingBox from '../../components/common/LoadingBox.jsx';
 import { formatDateTime, money } from '../../utils/formatters.js';
 
@@ -9,6 +11,8 @@ export default function DealDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
   const toast = useToast();
+  const confirm = useConfirm();
+  const promptText = usePrompt();
   const [deal, setDeal] = useState(null);
   const [note, setNote] = useState('');
   const [loading, setLoading] = useState(true);
@@ -17,7 +21,7 @@ export default function DealDetail() {
   const load = () => {
     api.get(`/api/deals/${id}`)
       .then((d) => setDeal(d.deal))
-      .catch(() => navigate('/pipeline'))
+      .catch((err) => { toast(err.message || 'Could not load this deal.', 'danger'); navigate('/pipeline'); })
       .finally(() => setLoading(false));
   };
 
@@ -39,7 +43,7 @@ export default function DealDetail() {
   };
 
   const markWon = async () => {
-    if (!confirm('Mark this deal as Won?')) return;
+    if (!(await confirm('Mark this deal as Won?', { title: 'Mark as Won', danger: false, confirmLabel: 'Mark as Won' }))) return;
     try {
       await api.post(`/api/deals/${id}/won`, {});
       toast('Deal marked as Won!', 'success');
@@ -48,7 +52,7 @@ export default function DealDetail() {
   };
 
   const markLost = async () => {
-    const reason = prompt('Reason for losing:');
+    const reason = await promptText('Why was this deal lost?', { title: 'Mark as Lost', placeholder: 'Reason for losing', confirmLabel: 'Mark as Lost' });
     if (reason === null) return;
     try {
       await api.post(`/api/deals/${id}/lost`, { reason });
@@ -115,7 +119,7 @@ export default function DealDetail() {
                   value={note}
                   onChange={(e) => setNote(e.target.value)}
                 />
-                <button className="btn btn-primary btn-sm flex-shrink-0" disabled={saving}>Add</button>
+                <button className="btn-crm btn-crm-sm flex-shrink-0" disabled={saving}>Add</button>
               </form>
               {activities.length === 0 ? (
                 <p className="text-muted small">No activity yet.</p>

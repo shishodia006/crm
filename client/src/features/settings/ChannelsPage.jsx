@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { api } from '../../services/api.js';
 import { useToast } from '../../hooks/useToast.js';
 import LoadingBox from '../../components/common/LoadingBox.jsx';
+import PasswordInput from '../../components/common/PasswordInput.jsx';
 
 const CHANNELS = [
   { key: 'email', label: 'Email' },
@@ -163,7 +164,11 @@ export default function ChannelsPage() {
               {fields.map((f) => (
                 <div className="mb-3" key={f.name}>
                   <label className="crm-label">{f.label}</label>
-                  <input type={f.type || 'text'} className="crm-input" value={settings[f.name] ?? ''} onChange={(e) => setField(f.name, e.target.value)} />
+                  {f.type === 'password' ? (
+                    <PasswordInput className="crm-input" value={settings[f.name] ?? ''} onChange={(e) => setField(f.name, e.target.value)} />
+                  ) : (
+                    <input type={f.type || 'text'} className="crm-input" value={settings[f.name] ?? ''} onChange={(e) => setField(f.name, e.target.value)} />
+                  )}
                 </div>
               ))}
 

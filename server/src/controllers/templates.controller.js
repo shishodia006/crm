@@ -54,7 +54,11 @@ export async function store(req, res) {
 
 export async function syncWhatsApp(req, res) {
   const { getSetting } = await import('../services/settings.service.js');
-  const apiKey = req.query.key || req._anantya_override_key || await getSetting('wa_anantya_api_key', '', req.companyId);
+  const channel = req.query.channel === 'rcs' ? 'rcs' : 'whatsapp';
+  const keySetting = channel === 'rcs' ? 'rcs_api_key' : 'wa_anantya_api_key';
+  const apiKey = req.query.key || req._anantya_override_key
+    || await getSetting(keySetting, '', req.companyId)
+    || await getSetting('wa_anantya_api_key', '', req.companyId);
   if (!apiKey) return fail(res, 'Anantya API key not configured.', 422);
 
   const response = await fetch('https://apiv1.anantya.ai/api/Campaign/GetTemplates', {
@@ -109,10 +113,11 @@ export async function syncWhatsApp(req, res) {
 
     if (!saveMode || !waId) { skipped++; continue; }
 
-    // Upsert: if wa_template_id already exists, update; else insert
+    // Upsert: if this template was already synced for this exact channel, update it;
+    // else insert fresh (so "sync as RCS" doesn't clobber an existing WhatsApp row for the same template ID).
     const existing = await one(
-      "SELECT id FROM templates WHERE wa_template_id=? AND channel IN ('whatsapp','rcs') AND company_id=? LIMIT 1",
-      [waId, req.companyId]
+      'SELECT id FROM templates WHERE wa_template_id=? AND channel=? AND company_id=? LIMIT 1',
+      [waId, channel, req.companyId]
     );
     if (existing) {
       await run(
@@ -122,13 +127,13 @@ export async function syncWhatsApp(req, res) {
     } else {
       await run(
         "INSERT INTO templates (company_id,name,channel,body,wa_template_id,media_url,variables,status,created_by) VALUES (?,?,?,?,?,?,?,?,?)",
-        [req.companyId, name, 'whatsapp', body, waId, mediaUrl, variablesJson, tplStatus, req.user?.id || 1]
+        [req.companyId, name, channel, body, waId, mediaUrl, variablesJson, tplStatus, req.user?.id || 1]
       );
     }
     imported++;
   }
 
-  ok(res, { imported, skipped, total: raw.length, templates: result }, `Synced ${imported} templates from Anantya.`);
+  ok(res, { imported, skipped, total: raw.length, templates: result }, `Synced ${imported} templates from Anantya as ${channel}.`);
 }
 
 export async function show(req, res) {

@@ -82,7 +82,15 @@ export async function getThread(companyId, conversationId) {
 
 export async function getOrCreateConversation(companyId, leadId, channel = 'email') {
   const existing = await one('SELECT * FROM conversations WHERE company_id=? AND lead_id=? LIMIT 1', [companyId, leadId]);
-  if (existing) return existing;
+  if (existing) {
+    // A lead has one conversation thread, but the channel used to reach them can change
+    // between sends (e.g. task modal sending WhatsApp after an earlier email) — keep it current.
+    if (existing.channel !== channel) {
+      await run('UPDATE conversations SET channel=? WHERE id=?', [channel, existing.id]);
+      existing.channel = channel;
+    }
+    return existing;
+  }
   const result = await run(
     'INSERT INTO conversations (company_id, lead_id, channel) VALUES (?,?,?)',
     [companyId, leadId, channel]
@@ -90,7 +98,12 @@ export async function getOrCreateConversation(companyId, leadId, channel = 'emai
   return one('SELECT * FROM conversations WHERE id=?', [result.insertId]);
 }
 
-export async function sendReply(companyId, conversationId, userId, body) {
+// WhatsApp/RCS go through Anantya's template-send API — there's no free-text
+// endpoint in this integration, so a real template row (with wa_template_id)
+// is required for those channels. Email/SMS can send free-form text.
+const TEMPLATE_ONLY_CHANNELS = ['whatsapp', 'rcs'];
+
+export async function sendReply(companyId, conversationId, userId, body, templateId = null) {
   const conversation = await one('SELECT * FROM conversations WHERE id=? AND company_id=? LIMIT 1', [conversationId, companyId]);
   if (!conversation) return { error: 'not_found' };
 
@@ -98,18 +111,30 @@ export async function sendReply(companyId, conversationId, userId, body) {
   if (!lead) return { error: 'lead_not_found' };
 
   const channel = conversation.channel;
-  const template = channel === 'email' ? { subject: `Re: ${lead.company || lead.name}`, body } : { body };
+
+  let template;
+  if (templateId) {
+    template = await one('SELECT * FROM templates WHERE id=? AND company_id=? AND channel=? LIMIT 1', [templateId, companyId, channel]);
+    if (!template) return { error: 'template_not_found' };
+  } else if (TEMPLATE_ONLY_CHANNELS.includes(channel)) {
+    return { error: 'template_required' };
+  } else {
+    template = channel === 'email' ? { subject: `Re: ${lead.company || lead.name}`, body } : { body };
+  }
+
   const sendResult = await sendCommunication(channel, lead, template);
+  const sentComm = await one('SELECT body_rendered FROM communications WHERE id=?', [sendResult.comm_id]);
+  const logBody = sentComm?.body_rendered || body || template.body || '';
 
   const insert = await run(
     `INSERT INTO conversation_messages (conversation_id, communication_id, direction, channel, body, sender_user_id, status, error_message)
      VALUES (?,?,?,?,?,?,?,?)`,
-    [conversationId, sendResult.comm_id, 'out', channel, body, userId, sendResult.delivered ? 'sent' : 'failed', sendResult.error || null]
+    [conversationId, sendResult.comm_id, 'out', channel, logBody, userId, sendResult.delivered ? 'sent' : 'failed', sendResult.error || null]
   );
 
   await run(
     'UPDATE conversations SET last_message_at=NOW(), last_message_preview=?, unread_count=0 WHERE id=?',
-    [truncate(body), conversationId]
+    [truncate(logBody), conversationId]
   );
 
   const message = await one(

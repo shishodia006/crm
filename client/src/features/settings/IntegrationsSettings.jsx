@@ -3,18 +3,27 @@ import { api } from '../../services/api.js';
 import { useToast } from '../../hooks/useToast.js';
 import { useConfirm } from '../../hooks/useConfirm.js';
 import LoadingBox from '../../components/common/LoadingBox.jsx';
+import PasswordInput from '../../components/common/PasswordInput.jsx';
 
 /* ── Helpers ─────────────────────────────────────────── */
 const Field = ({ label, name, type = 'text', value, onChange, readOnly, hint }) => (
   <div className="mb-3">
     <label className="crm-label">{label}</label>
-    <input
-      type={type}
-      className="form-control crm-input"
-      value={value ?? ''}
-      readOnly={readOnly}
-      onChange={readOnly ? undefined : (e) => onChange(name, e.target.value)}
-    />
+    {type === 'password' && !readOnly ? (
+      <PasswordInput
+        className="form-control crm-input"
+        value={value ?? ''}
+        onChange={(e) => onChange(name, e.target.value)}
+      />
+    ) : (
+      <input
+        type={type}
+        className="form-control crm-input"
+        value={value ?? ''}
+        readOnly={readOnly}
+        onChange={readOnly ? undefined : (e) => onChange(name, e.target.value)}
+      />
+    )}
     {hint && <div className="form-text text-11">{hint}</div>}
   </div>
 );

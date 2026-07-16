@@ -68,7 +68,7 @@ export default function ResetPage() {
                 required
               />
             </div>
-            <button className="btn btn-primary w-100" disabled={loading}>
+            <button className="btn-crm w-100 justify-content-center" disabled={loading}>
               {loading ? 'Saving…' : 'Reset password'}
             </button>
           </form>

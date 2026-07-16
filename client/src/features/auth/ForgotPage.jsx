@@ -47,7 +47,7 @@ export default function ForgotPage() {
                     autoFocus
                   />
                 </div>
-                <button className="btn btn-primary w-100" disabled={loading}>
+                <button className="btn-crm w-100 justify-content-center" disabled={loading}>
                   {loading ? 'Sending…' : 'Send reset link'}
                 </button>
               </form>

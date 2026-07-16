@@ -70,7 +70,7 @@ export default function PipelineSettings() {
             ))}
           </div>
           <div className="mt-3">
-            <button className="btn btn-primary btn-sm" disabled={saving}>
+            <button className="btn-crm btn-crm-sm" disabled={saving}>
               {saving ? 'Saving…' : 'Save Stages'}
             </button>
           </div>

@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { api } from '../../services/api.js';
 import { useToast } from '../../hooks/useToast.js';
 import LoadingBox from '../../components/common/LoadingBox.jsx';
+import PasswordInput from '../../components/common/PasswordInput.jsx';
 
 const FIELDS = [
   { name: 'app_name', label: 'Application Name' },
@@ -92,13 +93,21 @@ export default function GeneralSettings() {
             {AI_FIELDS.map((f) => (
               <div key={f.name} className="col-md-6">
                 <label className="form-label">{f.label}</label>
-                <input
-                  type={f.type || 'text'}
-                  className="form-control"
-                  value={form[f.name] ?? ''}
-                  placeholder={f.placeholder}
-                  onChange={(e) => setForm((p) => ({ ...p, [f.name]: e.target.value }))}
-                />
+                {f.type === 'password' ? (
+                  <PasswordInput
+                    value={form[f.name] ?? ''}
+                    placeholder={f.placeholder}
+                    onChange={(e) => setForm((p) => ({ ...p, [f.name]: e.target.value }))}
+                  />
+                ) : (
+                  <input
+                    type={f.type || 'text'}
+                    className="form-control"
+                    value={form[f.name] ?? ''}
+                    placeholder={f.placeholder}
+                    onChange={(e) => setForm((p) => ({ ...p, [f.name]: e.target.value }))}
+                  />
+                )}
               </div>
             ))}
           </div>
