@@ -26,8 +26,7 @@ export const config = {
       url: process.env.SMS_MSHASTRA_URL || 'https://mshastra.com/sendurl.aspx',
       user: process.env.SMS_MSHASTRA_USER || '',
       pwd: process.env.SMS_MSHASTRA_PWD || '',
-      sender: process.env.SMS_MSHASTRA_SENDER || '',
-      country: process.env.SMS_MSHASTRA_COUNTRY || '91'
+      sender: process.env.SMS_MSHASTRA_SENDER || ''
     }
   },
   uploadPath: process.env.UPLOAD_PATH

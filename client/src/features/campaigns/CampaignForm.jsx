@@ -3,14 +3,6 @@ import { useNavigate } from 'react-router-dom';
 import { api } from '../../services/api.js';
 import { useToast } from '../../hooks/useToast.js';
 
-const TYPES = [
-  { value: 'drip',            label: 'Drip (Automated Sequence)' },
-  { value: 'broadcast',       label: 'Broadcast' },
-  { value: 'email_blast',     label: 'Email Blast' },
-  { value: 'sms_blast',       label: 'SMS Blast' },
-  { value: 'whatsapp_blast',  label: 'WhatsApp Blast' },
-];
-
 const GOALS = [
   { value: '',           label: 'None' },
   { value: 'converted',  label: 'Lead Converted' },
@@ -115,15 +107,7 @@ export default function CampaignForm() {
             </div>
 
             <div className="row g-3 mb-3">
-              <div className="col-6">
-                <label className="form-label text-13 fw-semibold">Type</label>
-                <select className="form-select" value={form.type} onChange={set('type')}>
-                  {TYPES.map((t) => (
-                    <option key={t.value} value={t.value}>{t.label}</option>
-                  ))}
-                </select>
-              </div>
-              <div className="col-6" ref={dropRef}>
+              <div className="col-12" ref={dropRef}>
                 <label className="form-label text-13 fw-semibold">Auto-enroll from Source</label>
                 <div className="position-relative">
                   <button

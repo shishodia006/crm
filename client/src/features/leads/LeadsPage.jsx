@@ -75,11 +75,11 @@ export default function LeadsPage() {
         {r.company && <div className="text-11 text-muted-2">{r.company}</div>}
       </div>
     )},
-    { label: 'Contact', render: (r) => (
-      <div className="text-12 text-muted-2">
-        {r.email  && <div><i className="bi bi-envelope me-1" />{r.email}</div>}
-        {r.mobile && <div><i className="bi bi-phone me-1" />{r.mobile}</div>}
-      </div>
+    { label: 'Email', render: (r) => (
+      <span className="text-12 text-muted-2">{r.email || <span className="text-muted">—</span>}</span>
+    )},
+    { label: 'Mobile', render: (r) => (
+      <span className="text-12 text-muted-2">{r.mobile || <span className="text-muted">—</span>}</span>
     )},
     { label: 'Source', render: (r) => r.source_name
         ? <span className="badge badge-source badge-crm">{r.source_name}</span>
@@ -98,7 +98,7 @@ export default function LeadsPage() {
       <span className={`badge text-bg-${scoreClass(r.score)} badge-crm`}>{r.score ?? 0}</span>
     )},
     { label: 'Added', render: (r) => <span className="text-12 text-muted-2">{formatDate(r.created_at)}</span> },
-    { label: 'Email', render: (r) => {
+    { label: 'Email Activity', render: (r) => {
       const sent    = Number(r.email_sent    || 0);
       const opened  = Number(r.email_opened  || 0);
       const clicked = Number(r.email_clicked || 0);
@@ -173,8 +173,8 @@ export default function LeadsPage() {
           <i className="bi bi-download me-1" />Export CSV
         </button>
         <label className="btn btn-sm btn-outline-secondary rounded-crm-xs text-13 mb-0 cursor-pointer">
-          <i className="bi bi-upload me-1" />Import CSV
-          <input type="file" accept=".csv" className="d-none" onChange={async (e) => {
+          <i className="bi bi-upload me-1" />Import CSV/Excel
+          <input type="file" accept=".csv,.xlsx,.xls" className="d-none" onChange={async (e) => {
             const file = e.target.files[0]; if (!file) return;
             const fd = new FormData(); fd.append('csv', file);
             try { const r = await api.post('/api/leads/import', fd); toast(`Imported ${r.imported} leads`, 'success'); reload(); }
@@ -182,6 +182,9 @@ export default function LeadsPage() {
             e.target.value = '';
           }} />
         </label>
+        <button className="btn btn-sm btn-outline-secondary rounded-crm-xs text-13" onClick={() => { window.location = '/api/leads/import/sample'; }}>
+          <i className="bi bi-file-earmark-arrow-down me-1" />Download Sample
+        </button>
       </div>
 
       {/* Filters */}

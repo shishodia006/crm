@@ -17,6 +17,7 @@ const PAGE_TITLES = {
   '/channels':     { label: 'Channels',         icon: 'broadcast' },
   '/sources':      { label: 'Sources',          icon: 'signpost-split-fill' },
   '/campaigns':    { label: 'Campaigns',       icon: 'megaphone-fill' },
+  '/broadcasts':   { label: 'Broadcasts',      icon: 'send-fill' },
   '/templates':    { label: 'Templates',       icon: 'file-earmark-text-fill' },
   '/tasks':        { label: 'Tasks',           icon: 'check2-square' },
   '/reports':      { label: 'Reports',         icon: 'bar-chart-line-fill' },
@@ -46,6 +47,7 @@ const NAV_SECTIONS = [
     { to: '/conversations', icon: 'chat-dots-fill',   label: 'Conversations' },
     { to: '/tasks',     icon: 'check2-square',    label: 'Tasks & To-do' },
     { to: '/campaigns', icon: 'megaphone-fill',   label: 'Campaigns & Drip' },
+    { to: '/broadcasts', icon: 'send-fill',       label: 'Broadcasts' },
     { to: '/ai-agents', icon: 'robot',            label: 'AI Agents', adminOnly: true },
   ]},
   { label: 'Business', items: [

@@ -238,7 +238,7 @@ function CreateReportModal({ prefill, catalog, onClose, onCreated }) {
       <div className="crm-modal-card" onClick={(e) => e.stopPropagation()}>
         <div className="crm-modal-header">
           <div className="fw-bold text-15">{prefill ? 'Use Template' : 'New Report'}</div>
-          <button className="crm-drawer-close" onClick={onClose}><i className="bi bi-x-lg text-13" /></button>
+          <button className="crm-modal-close" onClick={onClose}><i className="bi bi-x-lg text-13" /></button>
         </div>
         <form onSubmit={handleSubmit} className="p-4">
           <div className="mb-3">
@@ -306,7 +306,7 @@ function ScheduleModal({ report, members, onClose, onSaved }) {
       <div className="crm-modal-card" onClick={(e) => e.stopPropagation()}>
         <div className="crm-modal-header">
           <div className="fw-bold text-15">Schedule &ldquo;{report.name}&rdquo;</div>
-          <button className="crm-drawer-close" onClick={onClose}><i className="bi bi-x-lg text-13" /></button>
+          <button className="crm-modal-close" onClick={onClose}><i className="bi bi-x-lg text-13" /></button>
         </div>
         <form onSubmit={handleSubmit} className="p-4">
           <div className="row g-3 mb-3">

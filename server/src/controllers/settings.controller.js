@@ -23,6 +23,7 @@ export async function getSettings(req, res) {
 export async function saveSettings(req, res) {
   const allowed = [
     'app_name','timezone','currency','smtp_host','smtp_port','smtp_user','smtp_pass','smtp_from','smtp_from_name',
+    'imap_host','imap_port','imap_user','imap_pass','imap_secure',
     'sendgrid_key','mailgun_key','mailgun_domain','ses_key','ses_secret','ses_region','wa_api_token','wa_phone_id',
     'sms_provider','sms_mshastra_url','sms_mshastra_user','sms_mshastra_pwd','sms_mshastra_sender','sms_mshastra_country',
     'sms_api_key','sms_api_url','sms_sender','rcs_api_key','score_email_open','score_email_click','score_wa_read',
@@ -122,6 +123,19 @@ export async function updateUser(req, res) {
 }
 
 export async function getIntegrations(req, res) {
+  const { ensureWebhookKey } = await import('../services/settings.service.js');
+  // Generated lazily (once) so the webhook URL these Lead Sources API cards
+  // display is always ready to copy, the same way it always was before these
+  // sources had any real per-company routing key.
+  await Promise.all([
+    ensureWebhookKey(req.companyId, 'indiamart_webhook_key'),
+    ensureWebhookKey(req.companyId, 'tradeindia_webhook_key'),
+    ensureWebhookKey(req.companyId, 'meta_webhook_key'),
+    ensureWebhookKey(req.companyId, 'google_ads_webhook_key'),
+    ensureWebhookKey(req.companyId, 'justdial_webhook_key'),
+    ensureWebhookKey(req.companyId, 'bombora_webhook_key'),
+    ensureWebhookKey(req.companyId, 'g2_intent_webhook_key'),
+  ]);
   const [integrations, settingsRows] = await Promise.all([
     q('SELECT * FROM integrations WHERE company_id=? ORDER BY type,name', [req.companyId]),
     companySettings(req.companyId, ['email','whatsapp','sms','rcs','general','sources'])
@@ -133,6 +147,7 @@ export async function saveIntegrations(req, res) {
   const groupMap = {
     email_provider: 'email', smtp_host: 'email', smtp_port: 'email', smtp_user: 'email', smtp_pass: 'email',
     smtp_from: 'email', smtp_from_name: 'email', sendgrid_key: 'email', mailgun_key: 'email', mailgun_domain: 'email',
+    imap_host: 'email', imap_port: 'email', imap_user: 'email', imap_pass: 'email', imap_secure: 'email',
     ses_key: 'email', ses_secret: 'email', ses_region: 'email', gmail_oauth_client_id: 'email', gmail_oauth_client_secret: 'email',
     outlook_oauth_client_id: 'email', outlook_oauth_client_secret: 'email', outlook_oauth_tenant: 'email',
     wa_provider: 'whatsapp', wa_meta_token: 'whatsapp', wa_meta_phone_id: 'whatsapp', wa_gupshup_api_key: 'whatsapp',
@@ -141,13 +156,64 @@ export async function saveIntegrations(req, res) {
     sms_provider: 'sms', sms_mshastra_url: 'sms', sms_mshastra_user: 'sms', sms_mshastra_pwd: 'sms', sms_mshastra_sender: 'sms', sms_mshastra_country: 'sms',
     sms_api_key: 'sms', sms_api_url: 'sms', sms_sender: 'sms',
     rcs_api_key: 'rcs', indiamart_key: 'sources', tradeindia_key: 'sources',
-    tradeindia_user_id: 'sources', meta_ads_token: 'sources', meta_app_secret: 'sources', google_ads_token: 'sources',
-    google_ads_customer_id: 'sources', linkedin_token: 'sources', linkedin_org_urn: 'sources', justdial_key: 'sources', justdial_login: 'sources', ai_api_url: 'ai', ai_api_key: 'ai'
+    tradeindia_user: 'sources', meta_ads_token: 'sources', meta_ads_secret: 'sources', meta_verify_token: 'sources',
+    google_ads_webhook_secret: 'sources', linkedin_oauth_client_id: 'sources', linkedin_oauth_client_secret: 'sources',
+    linkedin_org_urn: 'sources', justdial_api_key: 'sources', justdial_login: 'sources', ai_api_url: 'ai', ai_api_key: 'ai',
+    google_sheets_oauth_client_id: 'sources', google_sheets_oauth_client_secret: 'sources', google_sheets_id: 'sources', google_sheets_range: 'sources',
+    shopify_shop_domain: 'sources', shopify_admin_token: 'sources', shopify_api_secret: 'sources', shopify_webhook_base_url: 'sources',
+    hubspot_access_token: 'sources', hubspot_webhook_secret: 'sources', hubspot_webhook_base_url: 'sources',
+    salesforce_oauth_client_id: 'sources', salesforce_oauth_client_secret: 'sources', salesforce_login_url: 'sources',
+    mailchimp_api_key: 'sources', mailchimp_list_id: 'sources', mailchimp_webhook_base_url: 'sources',
+    zendesk_subdomain: 'sources', zendesk_email: 'sources', zendesk_api_token: 'sources', zendesk_webhook_base_url: 'sources',
+    bombora_api_key: 'sources', g2_intent_api_key: 'sources', apollo_api_key: 'sources', lusha_api_key: 'sources', zoominfo_api_key: 'sources'
   };
   for (const [key, group] of Object.entries(groupMap)) {
     if (req.body[key] !== undefined) await saveCompanySetting(req.companyId, key, req.body[key], group);
   }
   ok(res, null, 'Integrations saved.');
+}
+
+const LEAD_SOURCE_SYNC = {
+  indiamart: async (companyId, req) => (await import('../services/indiamart.service.js')).syncIndiamartLeads(companyId, req),
+  tradeindia: async (companyId, req) => (await import('../services/tradeindia.service.js')).syncTradeindiaLeads(companyId, req),
+  linkedin: async (companyId, req) => (await import('../services/linkedin.service.js')).syncLinkedinLeads(companyId, req),
+  justdial: async (companyId, req) => (await import('../services/justdial.service.js')).syncJustdialLeads(companyId, req),
+  apollo: async (companyId, req) => (await import('../services/apollo.service.js')).syncApolloLeads(companyId, req),
+  lusha: async (companyId, req) => (await import('../services/lusha.service.js')).syncLushaLeads(companyId, req),
+  zoominfo: async (companyId, req) => (await import('../services/zoominfo.service.js')).syncZoominfoLeads(companyId, req),
+};
+
+// Bombora/G2 Intent don't produce leads at all (see their services) — they
+// create Tasks from account-level intent signals, so they get their own
+// response shape/message instead of "N new lead(s)".
+const INTENT_SOURCE_SYNC = {
+  bombora: async (companyId) => (await import('../services/bombora.service.js')).syncBomboraSignals(companyId),
+  g2_intent: async (companyId) => (await import('../services/g2intent.service.js')).syncG2IntentSignals(companyId),
+};
+
+// Separate from thirdPartyApps.controller.js's connect/sync/disconnect (that
+// controller is scoped to the Third Party Apps catalog/page) — these Lead
+// Sources API cards never had a Connect/Disconnect concept, just credential
+// fields plus a webhook URL, so a lighter dedicated sync-only endpoint fits
+// better than bolting them onto the other catalog.
+export async function syncLeadSource(req, res) {
+  const intentHandler = INTENT_SOURCE_SYNC[req.params.slug];
+  if (intentHandler) {
+    try {
+      const result = await intentHandler(req.companyId);
+      return ok(res, result, `Created ${result.created} task(s) from ${result.total} intent signal(s).`);
+    } catch (err) {
+      return fail(res, err.message, 422);
+    }
+  }
+  const handler = LEAD_SOURCE_SYNC[req.params.slug];
+  if (!handler) return fail(res, 'Unknown or webhook-only lead source.', 404);
+  try {
+    const summary = await handler(req.companyId, req);
+    ok(res, summary, `Synced ${summary.imported} new lead(s).`);
+  } catch (err) {
+    fail(res, err.message, 422);
+  }
 }
 
 export async function channelMetrics(req, res) {
@@ -176,7 +242,7 @@ export async function channelMetrics(req, res) {
 
 export async function integrationAccounts(req, res) {
   const accounts = await q(
-    'SELECT id,name,provider,channel,external_account_id,webhook_key,is_active,created_at,updated_at FROM integration_accounts WHERE company_id=? ORDER BY provider,name',
+    'SELECT id,name,provider,channel,external_account_id,webhook_key,is_active,daily_send_limit,sent_today,sent_today_date,created_at,updated_at FROM integration_accounts WHERE company_id=? ORDER BY provider,name',
     [req.companyId]
   );
   ok(res, { accounts });
@@ -188,18 +254,34 @@ export async function saveIntegrationAccount(req, res) {
   const channel = String(req.body.channel || 'other').trim();
   if (!name || !provider) return fail(res, 'Account name and provider are required.', 422);
   if (!['email','whatsapp','rcs','sms','lead_source','other'].includes(channel)) return fail(res, 'Invalid channel.', 422);
-  const config = req.body.config && typeof req.body.config === 'object' ? encryptValue(JSON.stringify(req.body.config)) : null;
+  const dailyLimit = req.body.daily_send_limit !== undefined && req.body.daily_send_limit !== ''
+    ? Number(req.body.daily_send_limit) : null;
+  const newConfig = req.body.config && typeof req.body.config === 'object' ? req.body.config : {};
+
   if (req.body.id) {
+    const existing = await one('SELECT config FROM integration_accounts WHERE id=? AND company_id=? LIMIT 1', [Number(req.body.id), req.companyId]);
+    if (!existing) return fail(res, 'Account not found.', 404);
+    let existingConfig = {};
+    try { existingConfig = existing.config ? JSON.parse(decryptValue(existing.config) || '{}') : {}; } catch { existingConfig = {}; }
+    // Merge: blank/omitted fields (e.g. re-saving to just toggle pause, or leaving
+    // the password field empty on edit) keep the previously stored value instead
+    // of wiping it out.
+    const merged = { ...existingConfig };
+    for (const [k, v] of Object.entries(newConfig)) {
+      if (v !== '' && v != null) merged[k] = v;
+    }
+    const config = Object.keys(merged).length ? encryptValue(JSON.stringify(merged)) : null;
     await run(
-      'UPDATE integration_accounts SET name=?,provider=?,channel=?,external_account_id=?,webhook_secret=?,config=?,is_active=? WHERE id=? AND company_id=?',
-      [name, provider, channel, req.body.external_account_id || null, req.body.webhook_secret || null, config, boolInt(req.body.is_active ?? true), Number(req.body.id), req.companyId]
+      'UPDATE integration_accounts SET name=?,provider=?,channel=?,external_account_id=?,webhook_secret=?,config=?,is_active=?,daily_send_limit=? WHERE id=? AND company_id=?',
+      [name, provider, channel, req.body.external_account_id || null, req.body.webhook_secret || null, config, boolInt(req.body.is_active ?? true), dailyLimit, Number(req.body.id), req.companyId]
     );
     return ok(res, { id: Number(req.body.id) }, 'Integration account updated.');
   }
+  const config = Object.keys(newConfig).length ? encryptValue(JSON.stringify(newConfig)) : null;
   const webhookKey = crypto.randomBytes(24).toString('hex');
   const result = await run(
-    'INSERT INTO integration_accounts (company_id,name,provider,channel,external_account_id,webhook_key,webhook_secret,config,is_active) VALUES (?,?,?,?,?,?,?,?,?)',
-    [req.companyId, name, provider, channel, req.body.external_account_id || null, webhookKey, req.body.webhook_secret || null, config, boolInt(req.body.is_active ?? true)]
+    'INSERT INTO integration_accounts (company_id,name,provider,channel,external_account_id,webhook_key,webhook_secret,config,is_active,daily_send_limit) VALUES (?,?,?,?,?,?,?,?,?,?)',
+    [req.companyId, name, provider, channel, req.body.external_account_id || null, webhookKey, req.body.webhook_secret || null, config, boolInt(req.body.is_active ?? true), dailyLimit]
   );
   ok(res, { id: result.insertId, webhook_key: webhookKey }, 'Integration account created.');
 }

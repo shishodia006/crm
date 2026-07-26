@@ -10,10 +10,11 @@ const FILTERS = [
   { key: 'email',      label: 'Email' },
   { key: 'whatsapp',   label: 'WhatsApp' },
   { key: 'sms',        label: 'SMS' },
+  { key: 'rcs',        label: 'RCS' },
   { key: 'unassigned', label: 'Unassigned' },
 ];
 
-const CHANNEL_ICON = { email: 'envelope-fill', whatsapp: 'whatsapp', sms: 'chat-dots-fill', call: 'telephone-fill' };
+const CHANNEL_ICON = { email: 'envelope-fill', whatsapp: 'whatsapp', sms: 'chat-dots-fill', rcs: 'phone-vibrate-fill', call: 'telephone-fill' };
 
 function buildListQuery(filter, search) {
   const params = new URLSearchParams();
@@ -22,6 +23,10 @@ function buildListQuery(filter, search) {
   if (search.trim()) params.set('search', search.trim());
   return `/api/conversations?${params.toString()}`;
 }
+
+// WhatsApp/RCS send through Anantya's approved-template API — there's no free-text
+// send for these, so a template must be picked (Email/SMS can be freehand).
+const TEMPLATE_ONLY_CHANNELS = ['whatsapp', 'rcs'];
 
 /* ── New Message modal ─────────────────────────────────────── */
 function NewMessageModal({ open, onClose, onCreated }) {
@@ -32,11 +37,23 @@ function NewMessageModal({ open, onClose, onCreated }) {
   const [results, setResults] = useState([]);
   const [lead, setLead]       = useState(null);
   const [channel, setChannel] = useState('email');
+  const [templates, setTemplates] = useState([]);
+  const [accounts, setAccounts] = useState([]);
+  const [templateId, setTemplateId] = useState('');
+  const [accountId, setAccountId] = useState('');
   const [message, setMessage] = useState('');
   const [saving, setSaving]   = useState(false);
+  const [waLabel, setWaLabel] = useState('');
 
   useEffect(() => {
-    if (!open) { setQuery(''); setResults([]); setLead(null); setChannel('email'); setMessage(''); }
+    if (!open) { setQuery(''); setResults([]); setLead(null); setChannel('email'); setTemplateId(''); setAccountId(''); setMessage(''); }
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    api.get('/api/meta').then((d) => setTemplates(d?.templates ?? [])).catch(() => {});
+    api.get('/api/settings/integration-accounts').then((d) => setAccounts(d?.accounts ?? [])).catch(() => {});
+    api.get('/api/settings/integrations').then((d) => setWaLabel(d?.settings?.wa_anantya_waba_id || '')).catch(() => {});
   }, [open]);
 
   useEffect(() => {
@@ -52,15 +69,45 @@ function NewMessageModal({ open, onClose, onCreated }) {
     return () => clearTimeout(timerRef.current);
   }, [query, lead]);
 
+  const templateOnly = TEMPLATE_ONLY_CHANNELS.includes(channel);
+  const accountsForChannel = accounts.filter((a) => a.channel === channel && a.is_active);
+  // Once a named account is picked, only show templates synced for that account —
+  // otherwise show the company-default (unassigned) templates for this channel.
+  const templatesForChannel = templates.filter((t) => t.channel === channel
+    && (accountId ? String(t.integration_account_id) === String(accountId) : !t.integration_account_id));
+
+  const pickChannel = (value) => { setChannel(value); setTemplateId(''); setAccountId(''); setMessage(''); };
+
+  const pickAccount = (id) => { setAccountId(id); setTemplateId(''); setMessage(''); };
+
+  const pickTemplate = (id) => {
+    setTemplateId(id);
+    const t = templatesForChannel.find((x) => String(x.id) === String(id));
+    setMessage(t?.body || '');
+  };
+
   if (!open) return null;
 
   const submit = async (e) => {
     e.preventDefault();
     if (!lead) return toast('Pick a lead first.', 'danger');
+    if (templateOnly && !templateId) return toast('Pick an approved template first.', 'danger');
     setSaving(true);
     try {
-      const res = await api.post('/api/conversations', { lead_id: lead.id, channel, message });
-      toast('Conversation ready.', 'success');
+      const res = await api.post('/api/conversations', {
+        lead_id: lead.id, channel,
+        message: templateOnly ? '' : message,
+        // Non-template-only channels treat the (possibly template-prefilled) message box as
+        // freeform text — send exactly what's in the box rather than re-fetching the template
+        // server-side, so edits the user made after picking a template aren't silently dropped.
+        template_id: templateOnly ? (templateId || null) : null,
+        integration_account_id: accountId || null,
+      });
+      if (res?.delivered === false) {
+        toast('Conversation started, but the message could not be delivered — check channel settings.', 'danger');
+      } else {
+        toast('Conversation ready.', 'success');
+      }
       onCreated?.(res?.id);
       onClose();
     } catch (err) { toast(err.message || 'Failed to start conversation.', 'danger'); }
@@ -107,17 +154,65 @@ function NewMessageModal({ open, onClose, onCreated }) {
           </div>
           <div className="mb-3">
             <label className="crm-label">Channel</label>
-            <select className="crm-select w-100" value={channel} onChange={(e) => setChannel(e.target.value)}>
+            <select className="crm-select w-100" value={channel} onChange={(e) => pickChannel(e.target.value)}>
               <option value="email">Email</option>
               <option value="whatsapp">WhatsApp</option>
               <option value="sms">SMS</option>
+              <option value="rcs">RCS</option>
             </select>
           </div>
-          <div className="mb-3">
-            <label className="crm-label">Message (optional)</label>
-            <textarea className="crm-input no-resize" rows={4} placeholder="Type a message to send now, or leave blank to just open the thread…"
-              value={message} onChange={(e) => setMessage(e.target.value)} />
-          </div>
+          {(accountsForChannel.length > 0 || (channel === 'whatsapp' && waLabel)) && (
+            <div className="mb-3">
+              <label className="crm-label">Send from account</label>
+              <select className="crm-select w-100" value={accountId} onChange={(e) => pickAccount(e.target.value)} disabled={accountsForChannel.length === 0}>
+                <option value="">{channel === 'whatsapp' && waLabel ? `Company default account (${waLabel})` : 'Company default account'}</option>
+                {accountsForChannel.map((a) => <option key={a.id} value={a.id}>{a.name} · {a.provider}</option>)}
+              </select>
+            </div>
+          )}
+          {templateOnly ? (
+            <>
+              <div className="mb-3">
+                <label className="crm-label">Template <span className="req">*</span></label>
+                <select className="crm-select w-100" value={templateId} onChange={(e) => pickTemplate(e.target.value)}>
+                  <option value="">— Select an approved template —</option>
+                  {templatesForChannel.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+                </select>
+                {templatesForChannel.length === 0 && (
+                  <div className="text-11 text-muted-3 mt-1">No approved {channel} templates yet — create one in Templates first.</div>
+                )}
+              </div>
+              {templateId && (
+                <div className="mb-3">
+                  <label className="crm-label">Preview</label>
+                  <div className="crm-input" style={{ background: '#f8fafc', color: '#374151', whiteSpace: 'pre-wrap' }}>
+                    {message || <span className="text-muted-3">No preview available for this template.</span>}
+                  </div>
+                  <div className="text-11 text-muted-3 mt-1">
+                    <i className="bi bi-info-circle me-1" />WhatsApp/RCS only send via approved templates — the exact wording above is what gets delivered.
+                  </div>
+                </div>
+              )}
+            </>
+          ) : (
+            <>
+              {templatesForChannel.length > 0 && (
+                <div className="mb-3">
+                  <label className="crm-label">Template (optional)</label>
+                  <select className="crm-select w-100" value={templateId} onChange={(e) => pickTemplate(e.target.value)}>
+                    <option value="">— None, write your own message —</option>
+                    {templatesForChannel.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+                  </select>
+                  <div className="text-11 text-muted-3 mt-1">Picking a template fills the message below — edit it freely before sending.</div>
+                </div>
+              )}
+              <div className="mb-3">
+                <label className="crm-label">Message (optional)</label>
+                <textarea className="crm-input no-resize" rows={4} placeholder="Type a message to send now, or leave blank to just open the thread…"
+                  value={message} onChange={(e) => setMessage(e.target.value)} />
+              </div>
+            </>
+          )}
         </form>
         <div className="crm-drawer-footer">
           <button className="btn-crm btn-crm-lg flex-grow-1" disabled={saving} onClick={submit}>
@@ -141,13 +236,17 @@ export default function ConversationsPage() {
   const [modalOpen, setModalOpen] = useState(false);
   const scrollRef = useRef(null);
 
-  const { data: listData, loading: listLoading, reload: reloadList } = useResource(buildListQuery(filter, search), [filter, search]);
+  // Polled (not just loaded once) so a new inbound WhatsApp/email message — or a
+  // brand-new lead auto-created from an unrecognized WhatsApp number — shows up
+  // here without the user having to manually refresh the page.
+  const { data: listData, loading: listLoading, reload: reloadList } = useResource(buildListQuery(filter, search), [filter, search], 8000);
   const conversations = listData?.conversations ?? [];
-  const counts = listData?.counts ?? { all: 0, email: 0, whatsapp: 0, sms: 0, unassigned: 0 };
+  const counts = listData?.counts ?? { all: 0, email: 0, whatsapp: 0, sms: 0, rcs: 0, unassigned: 0 };
 
   const { data: threadData, loading: threadLoading, reload: reloadThread } = useResource(
     selectedId ? `/api/conversations/${selectedId}/messages` : null,
-    [selectedId]
+    [selectedId],
+    8000
   );
 
   useEffect(() => {
@@ -274,19 +373,27 @@ export default function ConversationsPage() {
                       {m.status === 'failed' && <div className="crm-msg-failed"><i className="bi bi-exclamation-triangle-fill me-1" />Delivery failed</div>}
                     </div>
                     <div className={`crm-msg-time ${m.direction === 'out' ? 'out' : 'in'}`}>
+                      <i className={`bi bi-${CHANNEL_ICON[m.channel] || 'chat-dots-fill'} me-1`} title={m.channel} />
                       {m.sender_name ? `${m.sender_name} · ` : ''}{timeAgo(m.created_at)}
                     </div>
                   </div>
                 ))}
               </div>
 
-              <form className="crm-conv-reply" onSubmit={sendReply}>
-                <input className="crm-conv-reply-input" placeholder="Type a reply…"
-                  value={reply} onChange={(e) => setReply(e.target.value)} disabled={sending} />
-                <button className="crm-conv-reply-send" disabled={sending || !reply.trim()}>
-                  {sending ? <span className="spinner-border spinner-border-sm" /> : <i className="bi bi-arrow-right" />}
-                </button>
-              </form>
+              {TEMPLATE_ONLY_CHANNELS.includes(conversation.channel) ? (
+                <div className="text-11 text-muted-3 p-2 text-center border-top">
+                  <i className="bi bi-info-circle me-1" />
+                  {conversation.channel === 'whatsapp' ? 'WhatsApp' : 'RCS'} only sends approved templates — open <strong>New Message</strong> to pick one for this lead.
+                </div>
+              ) : (
+                <form className="crm-conv-reply" onSubmit={sendReply}>
+                  <input className="crm-conv-reply-input" placeholder="Type a reply…"
+                    value={reply} onChange={(e) => setReply(e.target.value)} disabled={sending} />
+                  <button className="crm-conv-reply-send" disabled={sending || !reply.trim()}>
+                    {sending ? <span className="spinner-border spinner-border-sm" /> : <i className="bi bi-arrow-right" />}
+                  </button>
+                </form>
+              )}
             </>
           )}
         </div>

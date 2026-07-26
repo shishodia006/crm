@@ -362,11 +362,11 @@ export default function LeadDetail() {
         </button>
       </div>
 
-      <div className="row g-3">
+      <div className="row g-3 align-items-start">
 
         {/* ── Left column — Campaign Enrollments ── */}
         <div className="col-lg-4">
-          <div className="card border-0 shadow-sm h-100">
+          <div className="card border-0 shadow-sm">
             <div className="card-body d-flex flex-column">
               <div className="d-flex align-items-center mb-3">
                 <h6 className="fw-semibold mb-0 me-auto">
@@ -383,9 +383,10 @@ export default function LeadDetail() {
               </div>
 
               {enrollments.length === 0 ? (
-                <div className="text-center py-4 flex-grow-1 d-flex flex-column align-items-center justify-content-center">
-                  <i className="bi bi-send text-muted" style={{ fontSize:28 }} />
-                  <p className="text-muted small mt-2 mb-0">Not enrolled in any campaign yet.</p>
+                <div className="crm-empty">
+                  <i className="bi bi-send crm-empty-icon" />
+                  <div className="crm-empty-title">Not enrolled yet</div>
+                  <div className="crm-empty-sub">Enroll this lead in a campaign to start sending.</div>
                 </div>
               ) : (
                 <div className="d-flex flex-column gap-2 flex-grow-1">
@@ -466,6 +467,14 @@ export default function LeadDetail() {
                   <div className="col-12">
                     <div className="text-muted small">Requirement</div>
                     <div className="text-14">{lead.product_interest}</div>
+                  </div>
+                )}
+                {lead.source_ref && (
+                  <div className="col-12">
+                    <div className="text-muted small">Page URL</div>
+                    <div className="text-14 text-truncate">
+                      <a href={lead.source_ref} target="_blank" rel="noopener noreferrer">{lead.source_ref}</a>
+                    </div>
                   </div>
                 )}
               </div>

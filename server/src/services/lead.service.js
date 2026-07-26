@@ -3,6 +3,53 @@ import { config } from '../config/index.js';
 import { cleanString, ipAddress, titleCase } from '../utils/helpers.js';
 import { addScoreEvent } from './score.service.js';
 
+// Spreadsheet headers are whatever the person who made the sheet typed —
+// "Email", "Email Address", "E-mail" — not necessarily the exact lowercase key
+// names (email, mobile, company...) the lead pipeline expects. Without this,
+// a header that doesn't match byte-for-byte silently maps to nothing and the
+// column is dropped for every row, with no error raised anywhere. Shared by
+// both the CSV/Excel importer and the Google Sheets sync — same rules either way.
+const FIELD_ALIASES = {
+  name: ['name', 'full name', 'contact name', 'lead name'],
+  email: ['email', 'email address', 'email id', 'e-mail', 'e-mail address'],
+  mobile: ['mobile', 'phone', 'phone number', 'mobile number', 'contact number', 'whatsapp number'],
+  company: ['company', 'company name', 'organization', 'organisation'],
+  designation: ['designation', 'job title', 'title', 'role'],
+  industry: ['industry'],
+  city: ['city'],
+  state: ['state'],
+  country: ['country'],
+  pincode: ['pincode', 'pin code', 'zip', 'zip code', 'postal code'],
+  website: ['website', 'website url'],
+  product_interest: ['product_interest', 'product', 'product interest', 'subject', 'requirement'],
+};
+
+// Beyond exact aliases, real-world sheets prefix/suffix these two fields in ways
+// no fixed list can fully cover ("cs_email", "alt_mobile", "whatsapp_no") — so
+// email/mobile also fall back to "header contains this word" if no exact alias hit.
+const SUBSTRING_FALLBACKS = { email: 'email', mobile: 'mobile' };
+
+export function normalizeImportRow(row) {
+  const byLowerKey = {};
+  for (const [key, value] of Object.entries(row)) byLowerKey[key.trim().toLowerCase()] = value;
+  const lowerKeys = Object.keys(byLowerKey);
+
+  const normalized = { custom_fields: row };
+  for (const [field, aliases] of Object.entries(FIELD_ALIASES)) {
+    for (const alias of aliases) {
+      if (byLowerKey[alias] !== undefined && byLowerKey[alias] !== '') {
+        normalized[field] = byLowerKey[alias];
+        break;
+      }
+    }
+    if (normalized[field] === undefined && SUBSTRING_FALLBACKS[field]) {
+      const match = lowerKeys.find((k) => k.includes(SUBSTRING_FALLBACKS[field]) && byLowerKey[k] !== '');
+      if (match) normalized[field] = byLowerKey[match];
+    }
+  }
+  return normalized;
+}
+
 export function validateLead(data, req) {
   const errors = {};
   const clean = {};
@@ -104,7 +151,7 @@ export async function matchingCampaign(leadId, sourceId, companyId = null, conn 
   return null;
 }
 
-export async function processLead(rawData, sourceId, campaignId, req, conn = undefined) {
+export async function processLead(rawData, sourceId, campaignId, req, conn = undefined, options = {}) {
   const { pool } = await import('../db/pool.js');
   const { enqueueJob } = await import('./job.service.js');
   const { enrollLead } = await import('./drip.service.js');
@@ -121,9 +168,11 @@ export async function processLead(rawData, sourceId, campaignId, req, conn = und
 
   if (existing) {
     const merge = {};
-    for (const field of ['company', 'designation', 'industry', 'city', 'state', 'country', 'product_interest']) {
+    for (const field of ['email', 'mobile', 'company', 'designation', 'industry', 'city', 'state', 'country', 'product_interest']) {
       if (!existing[field] && clean[field]) merge[field] = clean[field];
     }
+    if (merge.email) merge.email_valid = clean.email_valid;
+    if (merge.mobile) merge.mobile_valid = clean.mobile_valid;
     if (Object.keys(merge).length) await updateById('leads', existing.id, merge, db);
     leadId = Number(existing.id);
     const ageSeconds = (Date.now() - new Date(existing.created_at).getTime()) / 1000;
@@ -137,12 +186,17 @@ export async function processLead(rawData, sourceId, campaignId, req, conn = und
     }
   } else {
     leadId = await insertLead(clean, db);
-    await run(
-      `INSERT INTO tasks (company_id, title, description, lead_id, assigned_to, priority, due_at)
-       VALUES (?, ?, ?, ?, NULL, 'high', DATE_ADD(NOW(), INTERVAL 2 HOUR))`,
-      [companyId, `Welcome new lead: ${clean.name}`, 'New lead came in — reach out and send a welcome message.', leadId],
-      db
-    );
+    // A bulk import (hundreds/thousands of rows) shouldn't flood Tasks with one
+    // "welcome" task per row — callers doing a batch import pass skipWelcomeTask
+    // and create a single summary task themselves once the whole batch is done.
+    if (!options.skipWelcomeTask) {
+      await run(
+        `INSERT INTO tasks (company_id, title, description, lead_id, assigned_to, priority, due_at)
+         VALUES (?, ?, ?, ?, NULL, 'high', DATE_ADD(NOW(), INTERVAL 2 HOUR))`,
+        [companyId, `Welcome new lead: ${clean.name}`, 'New lead came in — reach out and send a welcome message.', leadId],
+        db
+      );
+    }
   }
 
   await enqueueJob('segment_lead', { lead_id: leadId }, db);

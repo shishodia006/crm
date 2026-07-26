@@ -19,13 +19,15 @@ function normalizeProvider(provider) {
   return value || 'mshastra';
 }
 
-function splitCountryMobile(to, countryCode = '91') {
-  const cc = cleanDigits(countryCode) || '91';
-  const digits = cleanDigits(to);
-  const mobile = cc && digits.startsWith(cc) && digits.length > cc.length
-    ? digits.slice(cc.length)
-    : digits;
-  return { countryCode: cc, mobile };
+// MShastra needs its own approved sender ID per country for some destinations —
+// Bahrain/Malaysia/DRC route through 'Mobishtra' and India through 'ZAMZAM',
+// regardless of what's configured in Settings; everywhere else falls back to
+// the company's configured (or default) sender.
+function resolveMshastraSenderId(mobile, configuredSender) {
+  const value = String(mobile || '');
+  if (value.startsWith('+973') || value.startsWith('+60') || value.startsWith('+243')) return 'Mobishtra';
+  if (value.startsWith('+91')) return 'ZAMZAM';
+  return configuredSender || 'MOALRT';
 }
 
 function redactPhone(value) {
@@ -76,12 +78,6 @@ export async function resolveSmsConfig(companyId, accountConfig = {}) {
         accountConfig.senderid,
         await getSetting('sms_mshastra_sender', config.sms.mshastra.sender, companyId)
       ),
-      country: pick(
-        accountConfig.country,
-        accountConfig.country_code,
-        await getSetting('sms_mshastra_country', config.sms.mshastra.country, companyId),
-        '91'
-      ),
     };
   }
 
@@ -97,11 +93,11 @@ export async function resolveSmsConfig(companyId, accountConfig = {}) {
 export async function sendMshastraSms({ to, message, smsConfig }) {
   const user = pick(smsConfig?.user);
   const pwd = pick(smsConfig?.pwd);
-  const sender = pick(smsConfig?.sender);
   const baseUrl = pick(smsConfig?.url, DEFAULT_MSHASTRA_URL);
-  const { countryCode, mobile } = splitCountryMobile(to, smsConfig?.country || '91');
+  const mobile = String(to || '').trim();
+  const sender = resolveMshastraSenderId(mobile, smsConfig?.sender);
 
-  if (!user || !pwd || !sender) {
+  if (!user || !pwd) {
     return { success: false, provider: 'mshastra', msgId: null, error: 'mshastra_not_configured' };
   }
   if (!mobile) {
@@ -118,12 +114,15 @@ export async function sendMshastraSms({ to, message, smsConfig }) {
     return { success: false, provider: 'mshastra', msgId: null, error: 'invalid_mshastra_url' };
   }
 
+  // Matches the known-working request shape exactly: full number (with country
+  // code) in mobileno, and CountryCode is always the literal "All" — not an
+  // actual country code, despite the parameter name.
   url.searchParams.set('user', user);
   url.searchParams.set('pwd', pwd);
   url.searchParams.set('senderid', sender);
-  url.searchParams.set('CountryCode', countryCode);
   url.searchParams.set('mobileno', mobile);
   url.searchParams.set('msgtext', message);
+  url.searchParams.set('CountryCode', 'All');
 
   let response;
   try {
@@ -133,7 +132,7 @@ export async function sendMshastraSms({ to, message, smsConfig }) {
   }
 
   const raw = (await response.text().catch(() => '')).trim();
-  console.log(`[mshastra] HTTP ${response.status} | to=${redactPhone(mobile)} | raw: ${raw.slice(0, 300)}`);
+  console.log(`[mshastra] HTTP ${response.status} | to=${redactPhone(mobile)} | senderid=${sender} | raw: ${raw.slice(0, 300)}`);
 
   if (!isMshastraSuccess(raw, response.ok)) {
     return {

@@ -20,7 +20,7 @@ export function renderTemplate(template, lead) {
 }
 
 export function injectEmailTracking(html, commId) {
-  const base = `${config.appUrl}/api/track`;
+  const base = `${config.appUrl}/track`;
   const uid = trackingUid(commId);
   const pixel = `<img src="${base}/open/${uid}" width="1" height="1" style="display:none" />`;
   const withPixel = String(html || '').includes('</body>')
@@ -40,7 +40,7 @@ function normalizePhone(mobile) {
   return digits;
 }
 
-async function getIntegrationAccount(accountId, companyId, channel) {
+export async function getIntegrationAccount(accountId, companyId, channel) {
   const account = await one(
     'SELECT * FROM integration_accounts WHERE id=? AND company_id=? AND is_active=1 LIMIT 1',
     [Number(accountId), Number(companyId)]
@@ -199,6 +199,22 @@ function extractVariables(body, lead, storedVariables = null) {
   return vars;
 }
 
+// Reuses one pooled SMTP connection per (host,port,user) instead of opening a
+// fresh connection for every single email — a broadcast to hundreds/thousands
+// of leads was otherwise paying a full TCP+TLS+auth handshake per recipient.
+const _transporterCache = new Map();
+function getSmtpTransporter(host, port, user, pass) {
+  const key = `${host}:${port}:${user}`;
+  if (_transporterCache.has(key)) return _transporterCache.get(key);
+  const transporter = nodemailer.createTransport({
+    host, port, secure: String(port) === '465',
+    auth: { user, pass },
+    pool: true, maxConnections: 3, maxMessages: 100,
+  });
+  _transporterCache.set(key, transporter);
+  return transporter;
+}
+
 async function sendAnantya(channel, apiKey, to, anantya_template_id, variables = [], contactName = '') {
   const ANANTYA_BASE = 'https://apiv1.anantya.ai';
   const url = `${ANANTYA_BASE}/api/Campaign/SendSingleTemplateMessage?templateId=${anantya_template_id}`;
@@ -237,6 +253,93 @@ async function sendAnantya(channel, apiKey, to, anantya_template_id, variables =
   return { success, msgId, error };
 }
 
+// Anantya's actual bulk-send endpoint — one HTTP call carries every recipient,
+// instead of one call per lead (what sendCommunication/sendAnantya do). Used for
+// broadcasts, where "send to 1000+ leads" as 1000+ sequential single-message API
+// calls would be slow and could trip Anantya's own rate limiting.
+async function sendAnantyaCampaign(apiKey, anantya_template_id, recipients) {
+  const url = `https://apiv1.anantya.ai/api/Campaign/SendCampaign?templateId=${anantya_template_id}`;
+  const payload = recipients.map(({ to, contactName, variables }) => {
+    const entry = { contactName: contactName || '', contactNo: to, mediaFileName: '', extraParams: '', mediaFile: '' };
+    variables.forEach((v, i) => { entry[`attribute${i + 1}`] = String(v ?? ''); });
+    return entry;
+  });
+
+  let response;
+  try {
+    response = await fetch(url, {
+      method: 'POST',
+      headers: { 'X-Api-Key': apiKey, accept: '*/*', 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+  } catch (fetchErr) {
+    return { success: false, error: `network_error: ${fetchErr.message}` };
+  }
+
+  const text = await response.text().catch(() => '');
+  let data = {};
+  try { data = JSON.parse(text); } catch {}
+  console.log(`[anantya][bulk-campaign] HTTP ${response.status} | recipients=${recipients.length} | raw: ${text.slice(0, 300)}`);
+
+  const success = data.isSuccess ?? data.IsSuccess ?? response.ok;
+  const error = success ? null : (data.message || data.Message || text.slice(0, 200) || `HTTP ${response.status}`);
+  return { success, error, raw: data };
+}
+
+// Public entry point: send one WhatsApp/RCS template to many leads in a single
+// Anantya API call. Still writes one `communications` row per lead afterward so
+// dashboards/reporting/lead timelines see the same per-lead history they would
+// from an individual send — Anantya's bulk response doesn't map back to
+// per-recipient message IDs, so every lead is recorded with the same overall
+// success/failure of the batch call.
+export async function sendAnantyaBroadcast(channel, leads, template, integrationAccountId = null) {
+  if (!leads.length) return { success: true, sent: 0, total: 0, error: null };
+  const companyId = leads[0].company_id;
+  const account = integrationAccountId ? await getIntegrationAccount(integrationAccountId, companyId, channel) : null;
+  const apiKey = account?.config?.api_key
+    || (channel === 'rcs' ? await getSetting('rcs_api_key', '', companyId) : '')
+    || await getSetting('wa_anantya_api_key', '', companyId);
+  const anantya_template_id = template?.wa_template_id;
+  if (!apiKey) return { success: false, sent: 0, total: leads.length, error: `anantya_${channel}_key_not_configured` };
+  if (!anantya_template_id) return { success: false, sent: 0, total: leads.length, error: `no_${channel}_template_id_on_template` };
+
+  const eligible = [];
+  for (const lead of leads) {
+    const to = normalizePhone(lead.mobile);
+    if (!to) continue;
+    let variables = extractVariables(template.body, lead, template.variables);
+    if (variables.length === 0) {
+      const count = await resolveVarCount(apiKey, anantya_template_id, template);
+      if (count > 0) variables = buildVarValues(count, lead);
+    }
+    eligible.push({ lead, to, contactName: lead.name || '', variables });
+  }
+  if (!eligible.length) return { success: false, sent: 0, total: leads.length, error: 'no_leads_with_valid_mobile' };
+
+  const result = await sendAnantyaCampaign(apiKey, anantya_template_id, eligible);
+
+  let sent = 0;
+  for (const { lead } of eligible) {
+    const insert = await run(
+      `INSERT INTO communications (lead_id,channel,template_id,to_address,body_rendered,status,provider,failed_reason)
+       VALUES (?,?,?,?,?,?,?,?)`,
+      [
+        lead.id, channel, template.id || null, lead.mobile,
+        renderTemplate(template?.body || '', lead),
+        result.success ? 'sent' : 'failed',
+        channel === 'rcs' ? 'anantya_rcs_bulk' : 'anantya_whatsapp_bulk',
+        result.success ? null : String(result.error || '').slice(0, 500),
+      ]
+    );
+    if (result.success) sent += 1;
+    if (result.success) {
+      await run("UPDATE communications SET sent_at=NOW() WHERE id=?", [insert.insertId]);
+    }
+  }
+
+  return { success: result.success, sent, total: leads.length, error: result.error };
+}
+
 // ─── Main send function ───────────────────────────────────────────
 
 export async function sendCommunication(channel, lead, template, enrollmentId = null, stepId = null, integrationAccountId = null) {
@@ -272,14 +375,25 @@ export async function sendCommunication(channel, lead, template, enrollmentId = 
       await run("UPDATE communications SET status='failed', failed_reason='smtp_not_configured' WHERE id=?", [commId]);
       return { delivered: false, comm_id: commId, error: 'smtp_not_configured' };
     }
+    if (account) {
+      // Single atomic UPDATE (check + increment + day-rollover in one statement) to avoid
+      // a read-then-write race when multiple sends from the same account fire concurrently.
+      const reserved = await run(
+        `UPDATE integration_accounts
+         SET sent_today = IF(sent_today_date = CURDATE(), sent_today + 1, 1), sent_today_date = CURDATE()
+         WHERE id = ? AND (daily_send_limit IS NULL OR sent_today_date < CURDATE() OR sent_today < daily_send_limit)`,
+        [account.id]
+      );
+      if (reserved.affectedRows === 0) {
+        await run("UPDATE communications SET status='failed', failed_reason='daily_send_limit_reached' WHERE id=?", [commId]);
+        return { delivered: false, comm_id: commId, error: 'daily_send_limit_reached' };
+      }
+    }
     try {
       const smtpPort = account?.config?.smtp_port || await getSetting('smtp_port', '587', lead.company_id);
-      const transporter = nodemailer.createTransport({
-        host: smtpHost,
-        port: Number(smtpPort),
-        secure: smtpPort === '465',
-        auth: { user: account?.config?.smtp_user || await getSetting('smtp_user', '', lead.company_id), pass: account?.config?.smtp_pass || await getSetting('smtp_pass', '', lead.company_id) }
-      });
+      const smtpUser = account?.config?.smtp_user || await getSetting('smtp_user', '', lead.company_id);
+      const smtpPass = account?.config?.smtp_pass || await getSetting('smtp_pass', '', lead.company_id);
+      const transporter = getSmtpTransporter(smtpHost, Number(smtpPort), smtpUser, smtpPass);
       const from     = account?.config?.smtp_from || await getSetting('smtp_from', await getSetting('smtp_user', '', lead.company_id), lead.company_id);
       const fromName = account?.config?.smtp_from_name || await getSetting('smtp_from_name', 'Dot Domino CRM', lead.company_id);
       const html     = injectEmailTracking(renderedBody, commId);

@@ -76,6 +76,33 @@ async function triggerMatchingEventConditions(communication, eventType) {
   }
 }
 
+// Extracts raw inbound WhatsApp messages (Meta-style `messages` array) regardless of
+// whether they carry a `context.id` — unlike extractWebhookEvents's reply detection
+// (which only fires for status/scoring purposes), this covers every inbound message
+// so it can be shown in the Conversations thread, not just ones replying to a specific prior send.
+export function extractInboundMessages(payload = {}) {
+  const messages = [];
+  for (const entry of payload.entry || []) {
+    for (const change of entry.changes || []) {
+      const contacts = change?.value?.contacts || [];
+      for (const message of change?.value?.messages || []) {
+        const body = replyTextFromPayload(message);
+        if (!body) continue;
+        const contact = contacts.find((c) => c.wa_id === message.from);
+        messages.push({
+          from: message.from || null,
+          contactName: contact?.profile?.name || null,
+          providerMsgId: message.id || null,
+          contextId: message.context?.id || null,
+          body,
+          occurredAt: message.timestamp ? new Date(Number(message.timestamp) * 1000) : null,
+        });
+      }
+    }
+  }
+  return messages;
+}
+
 // Handles Meta-style `statuses` arrays plus common provider event array shapes.
 export function extractWebhookEvents(payload = {}) {
   const events = [];

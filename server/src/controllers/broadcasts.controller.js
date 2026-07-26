@@ -64,12 +64,18 @@ export async function store(req, res) {
 
 export async function send(req, res) {
   const campaignId = Number(req.params.id);
-  try {
-    const result = await sendBroadcastNow(campaignId, req.companyId);
-    ok(res, result, `Sent to ${result.sent} of ${result.total} recipients.`);
-  } catch (error) {
-    fail(res, error.message, 422);
-  }
+  const campaign = await one("SELECT id, status FROM campaigns WHERE id=? AND company_id=? AND type='broadcast' LIMIT 1", [campaignId, req.companyId]);
+  if (!campaign) return fail(res, 'Broadcast not found.', 404);
+  if (campaign.status === 'sending') return fail(res, 'This broadcast is already sending.', 422);
+
+  // A batch of thousands of emails can take minutes — far longer than a
+  // request should stay open (browsers/proxies will time it out). Kick off
+  // the send in the background and respond immediately; the frontend polls
+  // the broadcast list to show live progress until status flips to 'sent'.
+  sendBroadcastNow(campaignId, req.companyId).catch((err) => {
+    console.error(`[broadcast] send failed for campaign ${campaignId}:`, err);
+  });
+  ok(res, { status: 'sending' }, 'Broadcast started.');
 }
 
 export async function destroy(req, res) {

@@ -162,19 +162,19 @@ export async function executeWorkflowStep(enrollment, depth = 0) {
     const sends = [];
     if (ad.email_template_id) {
       const t = await one("SELECT * FROM templates WHERE id=? AND status='active' LIMIT 1", [ad.email_template_id]);
-      if (t) sends.push(sendCommunication('email', lead, t, enrollment.enrollment_id, step.id));
+      if (t) sends.push(sendCommunication('email', lead, t, enrollment.enrollment_id, step.id, ad.email_integration_account_id || null));
     }
     if (ad.whatsapp_template_id) {
       const t = await one("SELECT * FROM templates WHERE id=? AND status='active' LIMIT 1", [ad.whatsapp_template_id]);
-      if (t) sends.push(sendCommunication('whatsapp', lead, t, enrollment.enrollment_id, step.id));
+      if (t) sends.push(sendCommunication('whatsapp', lead, t, enrollment.enrollment_id, step.id, ad.whatsapp_integration_account_id || null));
     }
     if (ad.rcs_template_id) {
       const t = await one("SELECT * FROM templates WHERE id=? AND status='active' LIMIT 1", [ad.rcs_template_id]);
-      if (t) sends.push(sendCommunication('rcs', lead, t, enrollment.enrollment_id, step.id));
+      if (t) sends.push(sendCommunication('rcs', lead, t, enrollment.enrollment_id, step.id, ad.rcs_integration_account_id || null));
     }
     if (ad.sms_template_id) {
       const t = await one("SELECT * FROM templates WHERE id=? AND status='active' LIMIT 1", [ad.sms_template_id]);
-      if (t) sends.push(sendCommunication('sms', lead, t, enrollment.enrollment_id, step.id));
+      if (t) sends.push(sendCommunication('sms', lead, t, enrollment.enrollment_id, step.id, ad.sms_integration_account_id || null));
     }
     const results = await Promise.all(sends);
     result.multi = results;

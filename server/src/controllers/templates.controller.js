@@ -1,5 +1,6 @@
 import { one, q, run, scalar } from '../db/pool.js';
 import { ok, fail } from '../utils/response.js';
+import { getIntegrationAccount } from '../services/comm.service.js';
 
 // Build the variables JSON column value from an explicit count or by counting {{N}} in body
 function buildVariablesJson(rawCount, body = '') {
@@ -16,6 +17,8 @@ export async function index(req, res) {
   const params = [];
   where.push('t.company_id=?'); params.push(req.companyId);
   if (req.query.channel) { where.push('t.channel=?'); params.push(req.query.channel); }
+  if (req.query.account_id === 'none') { where.push('t.integration_account_id IS NULL'); }
+  else if (req.query.account_id) { where.push('t.integration_account_id=?'); params.push(Number(req.query.account_id)); }
   if (req.query.q) {
     where.push('(t.name LIKE ? OR t.subject LIKE ?)');
     params.push(`%${req.query.q}%`, `%${req.query.q}%`);
@@ -45,9 +48,10 @@ export async function store(req, res) {
     return fail(res, 'Please sync from Anantya to get the template ID.', 422);
   }
   const variablesJson = buildVariablesJson(req.body.variable_count, body);
+  const designJson = Array.isArray(req.body.design_json) ? JSON.stringify(req.body.design_json) : null;
   const result = await run(
-    "INSERT INTO templates (company_id,name,channel,subject,body,wa_template_id,variables,status,created_by) VALUES (?,?,?,?,?,?,?,?,?)",
-    [req.companyId, name, channel, req.body.subject || null, body, req.body.wa_template_id || null, variablesJson, req.body.status || 'active', req.user.id]
+    "INSERT INTO templates (company_id,name,channel,subject,body,wa_template_id,variables,design_json,status,created_by) VALUES (?,?,?,?,?,?,?,?,?,?)",
+    [req.companyId, name, channel, req.body.subject || null, body, req.body.wa_template_id || null, variablesJson, designJson, req.body.status || 'active', req.user.id]
   );
   ok(res, { id: result.insertId }, 'Template created.');
 }
@@ -55,8 +59,21 @@ export async function store(req, res) {
 export async function syncWhatsApp(req, res) {
   const { getSetting } = await import('../services/settings.service.js');
   const channel = req.query.channel === 'rcs' ? 'rcs' : 'whatsapp';
+
+  // Syncing for a specific named account (e.g. a second WhatsApp number) uses
+  // that account's own Anantya key and tags every imported template with its
+  // id, so each account keeps a separate template list instead of sharing
+  // the company-wide default.
+  const accountId = req.query.account_id ? Number(req.query.account_id) : null;
+  let account = null;
+  if (accountId) {
+    account = await getIntegrationAccount(accountId, req.companyId, channel);
+    if (!account) return fail(res, 'Integration account not found.', 404);
+  }
+
   const keySetting = channel === 'rcs' ? 'rcs_api_key' : 'wa_anantya_api_key';
-  const apiKey = req.query.key || req._anantya_override_key
+  const apiKey = account?.config?.api_key
+    || req.query.key || req._anantya_override_key
     || await getSetting(keySetting, '', req.companyId)
     || await getSetting('wa_anantya_api_key', '', req.companyId);
   if (!apiKey) return fail(res, 'Anantya API key not configured.', 422);
@@ -113,11 +130,12 @@ export async function syncWhatsApp(req, res) {
 
     if (!saveMode || !waId) { skipped++; continue; }
 
-    // Upsert: if this template was already synced for this exact channel, update it;
-    // else insert fresh (so "sync as RCS" doesn't clobber an existing WhatsApp row for the same template ID).
+    // Upsert: if this template was already synced for this exact channel AND account, update it;
+    // else insert fresh (so "sync as RCS" or a different account doesn't clobber an existing row
+    // for the same template ID — each account keeps its own copy).
     const existing = await one(
-      'SELECT id FROM templates WHERE wa_template_id=? AND channel=? AND company_id=? LIMIT 1',
-      [waId, channel, req.companyId]
+      'SELECT id FROM templates WHERE wa_template_id=? AND channel=? AND company_id=? AND integration_account_id <=> ? LIMIT 1',
+      [waId, channel, req.companyId, accountId]
     );
     if (existing) {
       await run(
@@ -126,14 +144,15 @@ export async function syncWhatsApp(req, res) {
       );
     } else {
       await run(
-        "INSERT INTO templates (company_id,name,channel,body,wa_template_id,media_url,variables,status,created_by) VALUES (?,?,?,?,?,?,?,?,?)",
-        [req.companyId, name, channel, body, waId, mediaUrl, variablesJson, tplStatus, req.user?.id || 1]
+        "INSERT INTO templates (company_id,name,channel,body,wa_template_id,media_url,variables,status,created_by,integration_account_id) VALUES (?,?,?,?,?,?,?,?,?,?)",
+        [req.companyId, name, channel, body, waId, mediaUrl, variablesJson, tplStatus, req.user?.id || 1, accountId]
       );
     }
     imported++;
   }
 
-  ok(res, { imported, skipped, total: raw.length, templates: result }, `Synced ${imported} templates from Anantya as ${channel}.`);
+  const forAccount = account ? ` for ${account.name}` : '';
+  ok(res, { imported, skipped, total: raw.length, templates: result }, `Synced ${imported} templates from Anantya as ${channel}${forAccount}.`);
 }
 
 export async function show(req, res) {
@@ -147,8 +166,12 @@ export async function update(req, res) {
   const body = String(req.body.body || '');
   if (!name || !body) return fail(res, 'Name and body are required.', 422);
   const variablesJson = buildVariablesJson(req.body.variable_count, body);
-  await run('UPDATE templates SET name=?,subject=?,body=?,wa_template_id=?,variables=?,status=?,updated_at=NOW() WHERE id=? AND company_id=?', [
-    name, req.body.subject || null, body, req.body.wa_template_id || null, variablesJson,
+  // A direct body edit (no design_json sent) clears any stale block design, so
+  // reopening the template falls back to plain-text mode instead of showing
+  // blocks that no longer match the saved body.
+  const designJson = Array.isArray(req.body.design_json) ? JSON.stringify(req.body.design_json) : null;
+  await run('UPDATE templates SET name=?,subject=?,body=?,wa_template_id=?,variables=?,design_json=?,status=?,updated_at=NOW() WHERE id=? AND company_id=?', [
+    name, req.body.subject || null, body, req.body.wa_template_id || null, variablesJson, designJson,
     req.body.status || 'active', Number(req.params.id), req.companyId
   ]);
   ok(res, null, 'Template updated.');

@@ -102,13 +102,14 @@ export async function dealsStore(req, res) {
     title: String(req.body.title || '').trim(), lead_id: Number(req.body.lead_id),
     stage_id: Number(req.body.stage_id), assigned_to: req.body.assigned_to ? Number(req.body.assigned_to) : null,
     value: Number(req.body.value || 0), probability: Number(req.body.probability || 0),
-    expected_close: req.body.expected_close || null
+    expected_close: req.body.expected_close_date || null,
+    notes: String(req.body.notes || '').trim() || null,
   };
   if (!data.title || !data.lead_id || !data.stage_id) return fail(res, 'Title, lead, and stage are required.', 422);
   const lead = await one('SELECT source_id FROM leads WHERE id=? AND company_id=? LIMIT 1', [data.lead_id, req.companyId]);
   if (!lead) return fail(res, 'Lead not found in the selected company.', 404);
   const result = await run(
-    'INSERT INTO deals (company_id,title,lead_id,stage_id,assigned_to,value,probability,expected_close,source_id) VALUES (?,?,?,?,?,?,?,?,?)',
+    'INSERT INTO deals (company_id,title,lead_id,stage_id,assigned_to,value,probability,expected_close,notes,source_id) VALUES (?,?,?,?,?,?,?,?,?,?)',
     [req.companyId, ...Object.values(data), lead.source_id || null]
   );
   ok(res, { id: result.insertId }, 'Deal created.');
@@ -116,7 +117,9 @@ export async function dealsStore(req, res) {
 
 export async function dealsShow(req, res) {
   const deal = await one(
-    `SELECT d.*, l.name AS lead_name, l.email, l.mobile, l.company, l.source_id, ps.name AS stage_name, u.name AS agent_name
+    `SELECT d.*, d.expected_close AS expected_close_date,
+            IF(d.won_at IS NOT NULL, 'won', IF(d.lost_at IS NOT NULL, 'lost', 'open')) AS status,
+            l.name AS lead_name, l.email, l.mobile, l.company, l.source_id, ps.name AS stage_name, u.name AS agent_name
      FROM deals d LEFT JOIN leads l ON l.id=d.lead_id LEFT JOIN pipeline_stages ps ON ps.id=d.stage_id LEFT JOIN users u ON u.id=d.assigned_to
      WHERE d.id=? AND d.company_id=? LIMIT 1`,
     [Number(req.params.id), req.companyId]

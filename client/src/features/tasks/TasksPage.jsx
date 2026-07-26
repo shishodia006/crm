@@ -15,7 +15,7 @@ const TABS = [
   { key: 'completed', label: 'Completed' },
 ];
 
-const BLANK = { title: '', due_at: '', priority: 'normal', description: '' };
+const BLANK = { title: '', due_at: '', priority: 'medium', description: '' };
 
 function dueLabel(dueAt) {
   if (!dueAt) return null;
@@ -263,8 +263,9 @@ export default function TasksPage() {
                 <div className="col-md-2">
                   <label className="crm-label">Priority</label>
                   <select className="crm-select w-100" value={form.priority} onChange={(e) => set('priority', e.target.value)}>
+                    <option value="urgent">Urgent</option>
                     <option value="high">High</option>
-                    <option value="normal">Normal</option>
+                    <option value="medium">Medium</option>
                     <option value="low">Low</option>
                   </select>
                 </div>

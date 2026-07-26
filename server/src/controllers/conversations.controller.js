@@ -36,15 +36,17 @@ export async function store(req, res) {
 
   const body = String(req.body.message || '').trim();
   const templateId = req.body.template_id ? Number(req.body.template_id) : null;
+  const integrationAccountId = req.body.integration_account_id ? Number(req.body.integration_account_id) : null;
   let message = null;
   let delivered = null;
   if (body || templateId) {
-    const result = await sendReply(req.companyId, conversation.id, req.user.id, body, templateId);
+    const result = await sendReply(req.companyId, conversation.id, req.user.id, body, templateId, integrationAccountId);
     if (result.error) {
       const messages = {
         template_required: 'A template is required to message a lead on this channel.',
         template_not_found: 'Selected template was not found.',
         lead_not_found: 'Lead not found on this conversation.',
+        daily_send_limit_reached: 'This account has reached its daily send limit — try again tomorrow or pick a different account.',
       };
       return fail(res, messages[result.error] || result.error, 422);
     }
@@ -62,6 +64,9 @@ export async function reply(req, res) {
   const result = await sendReply(req.companyId, Number(req.params.id), req.user.id, body);
   if (result.error === 'not_found') return fail(res, 'Conversation not found.', 404);
   if (result.error === 'lead_not_found') return fail(res, 'Lead not found on this conversation.', 404);
+  if (result.error === 'template_required') return fail(res, 'This channel only sends approved templates — use "New Message" to pick one.', 422);
+  if (result.error === 'template_not_found') return fail(res, 'Selected template was not found.', 422);
+  if (result.error === 'daily_send_limit_reached') return fail(res, 'This account has reached its daily send limit — try again tomorrow or pick a different account.', 422);
 
   ok(res, { message: result.message, delivered: result.delivered }, result.delivered ? 'Message sent.' : (result.error || 'Message saved but delivery failed.'));
 }

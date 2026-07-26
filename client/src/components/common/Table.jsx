@@ -1,8 +1,8 @@
 export default function Table({ columns, rows, onRow, emptyText = 'No records found.' }) {
   return (
     <div className="table-responsive">
-      <table className="table table-hover align-middle mb-0">
-        <thead className="table-light">
+      <table className="table table-hover align-middle mb-0 crm-table-fancy">
+        <thead>
           <tr>
             {columns.map((col) => (
               <th key={col.key ?? col.label} style={col.style} className={col.className}>

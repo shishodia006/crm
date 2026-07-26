@@ -58,6 +58,7 @@ router.use(requireAuth, requireCompany);
 router.get('/leads', requireAuth, asyncRoute(leads.index));
 router.post('/leads', requireAuth, requireCompanyRole('agent'), asyncRoute(leads.store));
 router.get('/leads/export', requireAuth, asyncRoute(leads.exportCsv));
+router.get('/leads/import/sample', requireAuth, asyncRoute(leads.sampleImport));
 router.post('/leads/import', requireAuth, upload.single('csv'), asyncRoute(leads.importCsv));
 router.get('/leads/:id', requireAuth, asyncRoute(leads.show));
 router.patch('/leads/:id', requireAuth, requireCompanyRole('agent'), asyncRoute(leads.update));
@@ -162,6 +163,7 @@ router.post('/settings/users/invite', adminOnly, asyncRoute(settings.inviteUser)
 router.patch('/settings/users/:id', adminOnly, asyncRoute(settings.updateUser));
 router.get('/settings/integrations', adminOnly, asyncRoute(settings.getIntegrations));
 router.post('/settings/integrations', adminOnly, asyncRoute(settings.saveIntegrations));
+router.post('/settings/sources/:slug/sync', adminOnly, asyncRoute(settings.syncLeadSource));
 router.get('/settings/channel-metrics', adminOnly, asyncRoute(settings.channelMetrics));
 router.post('/settings/test-sms', adminOnly, asyncRoute(settings.testSms));
 router.get('/settings/integration-accounts', adminOnly, asyncRoute(settings.integrationAccounts));

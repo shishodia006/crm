@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { api } from '../../services/api.js';
 import { useToast } from '../../hooks/useToast.js';
 import LoadingBox from '../../components/common/LoadingBox.jsx';
+import EmailBuilder, { blocksToHtml } from './EmailBuilder.jsx';
 
 const BLANK = {
   name: '', channel: 'email', subject: '', body: '',
@@ -26,6 +27,7 @@ export default function TemplateForm() {
   const [varCount, setVarCount] = useState('');
   const [loading, setLoading] = useState(isEdit);
   const [saving, setSaving] = useState(false);
+  const [blocks, setBlocks] = useState(null); // null = plain-text mode; array = builder mode
 
   useEffect(() => {
     if (!isEdit) return;
@@ -33,6 +35,12 @@ export default function TemplateForm() {
       .then((d) => {
         setForm({ ...BLANK, ...d.template });
         setVarCount(parseVarCount(d.template.variables));
+        if (d.template.design_json) {
+          try {
+            const parsed = typeof d.template.design_json === 'string' ? JSON.parse(d.template.design_json) : d.template.design_json;
+            if (Array.isArray(parsed)) setBlocks(parsed);
+          } catch { /* fall back to plain-text mode */ }
+        }
       })
       .catch((err) => { toast(err.message || 'Could not load this template.', 'danger'); navigate('/templates'); })
       .finally(() => setLoading(false));
@@ -48,12 +56,17 @@ export default function TemplateForm() {
     if (matches.length > 0 && !varCount) setVarCount(String(matches.length));
   };
 
+  const startBuilder = () => setBlocks([]);
+  const exitBuilder = () => setBlocks(null);
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setSaving(true);
     try {
       const payload = {
         ...form,
+        body: blocks ? blocksToHtml(blocks) : form.body,
+        design_json: blocks || undefined,
         variable_count: varCount !== '' ? Number(varCount) : null,
       };
       if (isEdit) {
@@ -173,21 +186,34 @@ export default function TemplateForm() {
               )}
 
               <div className="col-12">
-                <label className="form-label">Body *</label>
-                <p className="text-muted small mb-1">
-                  {isWaRcs
-                    ? <>Use <code>{'{{1}}'}</code> <code>{'{{2}}'}</code>… matching exact Anantya template variables. Or named: <code>{'{{name}}'}</code> <code>{'{{company}}'}</code></>
-                    : <>Variables: <code>{'{{name}}'}</code> <code>{'{{email}}'}</code> <code>{'{{company}}'}</code> <code>{'{{mobile}}'}</code></>
-                  }
-                </p>
-                <textarea
-                  name="body"
-                  value={form.body}
-                  onChange={handleBodyChange}
-                  className="form-control font-monospace"
-                  rows={10}
-                  required
-                />
+                <div className="d-flex align-items-center justify-content-between mb-1">
+                  <label className="form-label mb-0">Body *</label>
+                  {form.channel === 'email' && (
+                    blocks
+                      ? <button type="button" className="btn btn-outline-secondary btn-sm" onClick={exitBuilder}>Switch to Plain Text</button>
+                      : <button type="button" className="btn btn-outline-secondary btn-sm" onClick={startBuilder}><i className="bi bi-columns-gap me-1" />Switch to Builder</button>
+                  )}
+                </div>
+                {blocks ? (
+                  <EmailBuilder blocks={blocks} onChange={setBlocks} />
+                ) : (
+                  <>
+                    <p className="text-muted small mb-1">
+                      {isWaRcs
+                        ? <>Use <code>{'{{1}}'}</code> <code>{'{{2}}'}</code>… matching exact Anantya template variables. Or named: <code>{'{{name}}'}</code> <code>{'{{company}}'}</code></>
+                        : <>Variables: <code>{'{{name}}'}</code> <code>{'{{email}}'}</code> <code>{'{{company}}'}</code> <code>{'{{mobile}}'}</code></>
+                      }
+                    </p>
+                    <textarea
+                      name="body"
+                      value={form.body}
+                      onChange={handleBodyChange}
+                      className="form-control font-monospace"
+                      rows={10}
+                      required
+                    />
+                  </>
+                )}
               </div>
             </div>
             <div className="mt-4 d-flex gap-2">

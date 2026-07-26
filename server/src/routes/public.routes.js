@@ -7,7 +7,9 @@ import * as customReports from '../controllers/customReports.controller.js';
 const router = Router();
 const adminOnly = requireRoles('admin', 'superadmin');
 
-// Lead ingest & webhooks (no auth)
+// Lead ingest & webhooks (no auth) — raw body capture for /webhook paths (needed
+// since third-party senders don't always set Content-Type: application/json) is
+// handled in app.js, before either global body parser can touch the request.
 router.post('/ingest/:source', asyncRoute(pub.ingest));
 router.all('/webhook/:source', asyncRoute(pub.webhook));
 router.all('/webhook/:source/:webhookKey', asyncRoute(pub.webhook));
@@ -18,6 +20,10 @@ router.get('/track/click/:uid', asyncRoute(pub.trackClick));
 
 // QR lead capture page (no auth)
 router.all('/qr/:source', asyncRoute(pub.qrCapture));
+
+// Website embed capture (no auth) — same handler as /qr, just a clearer name
+// for the popup/landing-page/contact-form embed snippet shown in Sources.
+router.all('/capture/:source', asyncRoute(pub.qrCapture));
 
 // Custom report share links (no auth)
 router.get('/public/reports/:token', asyncRoute(customReports.publicShow));

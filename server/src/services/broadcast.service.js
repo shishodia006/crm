@@ -1,5 +1,10 @@
 import { one, q, run } from '../db/pool.js';
-import { sendCommunication } from './comm.service.js';
+import { sendCommunication, sendAnantyaBroadcast } from './comm.service.js';
+
+// WhatsApp/RCS templates go through Anantya's bulk campaign API (one HTTP call
+// for every recipient) — everything else (email/SMS) still sends one at a time,
+// since only Anantya has a true bulk endpoint here.
+const BULK_CHANNELS = ['whatsapp', 'rcs'];
 
 export const AUDIENCE_TYPES = [
   { key: 'all_contacts', label: 'All contacts' },
@@ -48,6 +53,14 @@ export async function resolveAudience(companyId, filter) {
   return { leads, label };
 }
 
+// Runs the actual send. Marks the campaign 'sending' immediately so the UI can
+// show a live "in progress" state, updates sent_count as each message goes out
+// (not just once at the very end) so progress is visible while polling, and
+// only flips to 'sent' once every recipient has been attempted. Callers that
+// need this to happen in the background (the HTTP endpoint — a batch of
+// thousands of emails can take minutes, far longer than a request should
+// stay open) call this WITHOUT awaiting it; processDueBroadcasts (a cron job,
+// already off the request path) awaits it directly.
 export async function sendBroadcastNow(campaignId, companyId) {
   const campaign = await one("SELECT * FROM campaigns WHERE id=? AND company_id=? AND type='broadcast' LIMIT 1", [campaignId, companyId]);
   if (!campaign) throw new Error('Broadcast not found.');
@@ -59,23 +72,53 @@ export async function sendBroadcastNow(campaignId, companyId) {
   try { filter = typeof campaign.audience_filter === 'string' ? JSON.parse(campaign.audience_filter) : (campaign.audience_filter || {}); } catch { filter = {}; }
   const { leads } = await resolveAudience(companyId, filter);
 
-  let sent = 0;
+  // Skip leads already enrolled in this broadcast (re-clicking "Send" shouldn't
+  // message the same person twice), for both send paths.
+  const newLeads = [];
   for (const lead of leads) {
     const existing = await one('SELECT id FROM lead_enrollments WHERE lead_id=? AND campaign_id=? LIMIT 1', [lead.id, campaignId]);
-    if (existing) continue;
-    const result = await run(
-      "INSERT INTO lead_enrollments (lead_id,campaign_id,status,enrolled_at,completed_at) VALUES (?,?,'completed',NOW(),NOW())",
-      [lead.id, campaignId]
-    );
-    const enrollmentId = Number(result.insertId);
-    const commResult = await sendCommunication(template.channel, lead, template, enrollmentId);
-    if (commResult.comm_id) sent += 1;
+    if (!existing) newLeads.push(lead);
   }
 
-  await run(
-    "UPDATE campaigns SET status='sent', sent_count=sent_count+?, start_at=COALESCE(start_at, NOW()), updated_at=NOW() WHERE id=?",
-    [sent, campaignId]
-  );
+  await run("UPDATE campaigns SET status='sending', start_at=COALESCE(start_at, NOW()), updated_at=NOW() WHERE id=?", [campaignId]);
+
+  let sent = 0;
+  try {
+    if (BULK_CHANNELS.includes(template.channel)) {
+      // One Anantya API call for every recipient — fast enough that the whole
+      // batch counts as a single progress step rather than per-lead updates.
+      for (const lead of newLeads) {
+        await run(
+          "INSERT INTO lead_enrollments (lead_id,campaign_id,status,enrolled_at,completed_at) VALUES (?,?,'completed',NOW(),NOW())",
+          [lead.id, campaignId]
+        );
+      }
+      const result = await sendAnantyaBroadcast(template.channel, newLeads, template, template.integration_account_id);
+      sent = result.sent;
+      await run("UPDATE campaigns SET sent_count=sent_count+? WHERE id=?", [sent, campaignId]);
+    } else {
+      for (const lead of newLeads) {
+        const result = await run(
+          "INSERT INTO lead_enrollments (lead_id,campaign_id,status,enrolled_at,completed_at) VALUES (?,?,'completed',NOW(),NOW())",
+          [lead.id, campaignId]
+        );
+        const enrollmentId = Number(result.insertId);
+        const commResult = await sendCommunication(template.channel, lead, template, enrollmentId);
+        if (commResult.comm_id) {
+          sent += 1;
+          await run("UPDATE campaigns SET sent_count=sent_count+1 WHERE id=?", [campaignId]);
+        }
+      }
+    }
+    await run("UPDATE campaigns SET status='sent', updated_at=NOW() WHERE id=?", [campaignId]);
+  } catch (err) {
+    // Back to draft (not stuck on 'sending' forever) so it's clear something
+    // went wrong and it can be retried — matches how processDueBroadcasts
+    // already treats a failed send.
+    await run("UPDATE campaigns SET status='draft', updated_at=NOW() WHERE id=?", [campaignId]).catch(() => {});
+    throw err;
+  }
+
   return { sent, total: leads.length };
 }
 

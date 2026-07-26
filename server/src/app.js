@@ -66,13 +66,54 @@ export function createApp() {
     next();
   });
 
+  // /webhook and /track paths are meant to be called by arbitrary third-party
+  // services (Anantya, Meta, etc.) — some of these "test" buttons run as
+  // browser JS from the provider's own dashboard, which means the request is
+  // subject to CORS. The frontend-only rule above only allows our own app's
+  // origin, so any such browser-based test would get silently blocked before
+  // ever reaching the route below. These paths need no cookies/credentials, so
+  // allowing any origin here is safe.
+  // /capture is the same idea but for the customer's OWN websites: the embed
+  // snippet on their popup/landing page/contact form runs as browser JS on
+  // *their* domain, not ours, so it needs the same open-CORS treatment.
+  app.use((req, res, next) => {
+    if (!req.path.startsWith('/webhook/') && !req.path.startsWith('/track/') && !req.path.startsWith('/capture/')) return next();
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET,HEAD,POST,OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-API-KEY, X-Api-Key, Authorization, authorization');
+    if (req.method === 'OPTIONS') return res.sendStatus(204);
+    next();
+  });
+
+  // Third-party webhook senders don't reliably set `Content-Type: application/json`
+  // (Anantya's own test payload omitted it) — the global JSON parser below only
+  // parses bodies whose content-type it recognizes, and the urlencoded parser after
+  // it would otherwise consume the stream first and mangle a JSON body it wasn't
+  // meant to touch. For /webhook paths, capture the true raw body up front —
+  // before either global parser gets a chance to touch the stream — and skip them
+  // both here so they can't silently overwrite this with an empty/garbled body.
+  app.use((req, res, next) => {
+    if (!req.path.startsWith('/webhook/')) return next();
+    express.raw({ type: () => true, limit: '2mb' })(req, res, (err) => {
+      if (err) return next(err);
+      const text = Buffer.isBuffer(req.body) ? req.body.toString('utf8') : '';
+      req.rawBody = text;
+      try { req.body = text ? JSON.parse(text) : {}; } catch { req.body = {}; }
+      next();
+    });
+  });
+
   // Raw body capture (needed for webhook signature verification)
   app.use((req, _res, next) => {
+    if (req.rawBody !== undefined) return next(); // already handled above for /webhook paths
     express.json({
       verify: (req, _res, buf) => { req.rawBody = buf.toString(); }
     })(req, _res, next);
   });
-  app.use(express.urlencoded({ extended: true }));
+  app.use((req, _res, next) => {
+    if (req.rawBody !== undefined) return next(); // already handled above for /webhook paths
+    express.urlencoded({ extended: true })(req, _res, next);
+  });
 
   // Session
   app.use(session({

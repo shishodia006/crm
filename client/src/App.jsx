@@ -24,6 +24,7 @@ import WorkflowBuilder from './features/campaigns/WorkflowBuilder.jsx';
 import SimpleBuilder from './features/campaigns/SimpleBuilder.jsx';
 import TemplatesPage from './features/templates/TemplatesPage.jsx';
 import TemplateForm from './features/templates/TemplateForm.jsx';
+import BroadcastsPage from './features/broadcasts/BroadcastsPage.jsx';
 import TasksPage from './features/tasks/TasksPage.jsx';
 import ConversationsPage from './features/conversations/ConversationsPage.jsx';
 import ReportsPage from './features/reports/ReportsPage.jsx';
@@ -93,6 +94,9 @@ export default function App() {
               <Route path="/campaigns/:id" element={<CampaignsPage />} />
               <Route path="/campaigns/:id/builder" element={<WorkflowBuilder />} />
               <Route path="/campaigns/:id/simple-builder" element={<SimpleBuilder />} />
+
+              {/* Broadcasts */}
+              <Route path="/broadcasts" element={<BroadcastsPage />} />
 
               {/* Templates */}
               <Route path="/templates" element={<TemplatesPage />} />

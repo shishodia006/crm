@@ -1,3 +1,4 @@
+import crypto from 'crypto';
 import { scalar, q, run } from '../db/pool.js';
 import { encryptValue, decryptValue } from '../utils/crypto.js';
 
@@ -14,6 +15,54 @@ export async function getSetting(key, fallback = '', companyId = null) {
   const value = await scalar('SELECT `value` FROM settings WHERE `key`=? LIMIT 1', [key]);
   if (value == null || value === '') return fallback;
   return isSensitive(key) ? decryptValue(String(value)) : String(value);
+}
+
+// The generic Anantya webhook route (no per-account key in the URL, used by a
+// company's *default* WhatsApp number) has no other way to authenticate the
+// caller or know which company a message belongs to. Anantya lets you attach a
+// custom header echoing back the API key we already gave them — matching it
+// against each company's stored (encrypted) key both verifies the call is
+// genuinely from Anantya and resolves which company it belongs to.
+export async function resolveCompanyByAnantyaKey(providedKey) {
+  if (!providedKey) return null;
+  const rows = await q("SELECT company_id, `value` FROM company_settings WHERE `key`='wa_anantya_api_key' AND `value`<>''");
+  for (const row of rows) {
+    if (decryptValue(row.value) === providedKey) return Number(row.company_id);
+  }
+  return null;
+}
+
+// Shopify webhooks (customers/create, orders/create, etc.) identify the sending
+// store via the X-Shopify-Shop-Domain header — unlike Anantya's API-key header,
+// the domain isn't sensitive/encrypted, so a direct value match is enough.
+export async function resolveCompanyByShopDomain(shopDomain) {
+  if (!shopDomain) return null;
+  const companyId = await scalar("SELECT company_id FROM company_settings WHERE `key`='shopify_shop_domain' AND `value`=? LIMIT 1", [shopDomain]);
+  return companyId ? Number(companyId) : null;
+}
+
+// Several webhook-receiving integrations (HubSpot, Mailchimp, Zendesk, and now
+// IndiaMart/Meta/Google Ads below) resolve which company a callback belongs to
+// via a random key embedded in the webhook URL itself, since the sender either
+// doesn't sign requests at all or doesn't include a company-identifying header.
+// This centralizes the generate-once / decrypt-and-match pattern so each new
+// integration doesn't reimplement it.
+export async function ensureWebhookKey(companyId, settingKey) {
+  let key = await getSetting(settingKey, '', companyId);
+  if (!key) {
+    key = crypto.randomBytes(16).toString('hex');
+    await saveCompanySetting(companyId, settingKey, key, 'sources');
+  }
+  return key;
+}
+
+export async function resolveCompanyByWebhookKey(settingKey, providedKey) {
+  if (!providedKey) return null;
+  const rows = await q('SELECT company_id, `value` FROM company_settings WHERE `key`=? AND `value`<>\'\'', [settingKey]);
+  for (const row of rows) {
+    if (decryptValue(row.value) === providedKey) return Number(row.company_id);
+  }
+  return null;
 }
 
 export async function companySettings(companyId, groups = []) {

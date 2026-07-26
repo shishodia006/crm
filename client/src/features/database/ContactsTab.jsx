@@ -41,7 +41,7 @@ function AddContactModal({ onClose, onCreated }) {
       <div className="crm-modal-card" onClick={(e) => e.stopPropagation()}>
         <div className="crm-modal-header">
           <div className="fw-bold text-15">Add Contact</div>
-          <button className="crm-drawer-close" onClick={onClose}><i className="bi bi-x-lg text-13" /></button>
+          <button className="crm-modal-close" onClick={onClose}><i className="bi bi-x-lg text-13" /></button>
         </div>
         <form onSubmit={handleSubmit} className="p-4">
           <div className="mb-3"><label className="crm-label">Name</label><input className="crm-input" value={form.name} onChange={set('name')} required /></div>

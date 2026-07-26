@@ -134,6 +134,11 @@ function makeNodeData(type, overrides = {}) {
     whatsapp_template_id: '',
     rcs_template_id: '',
     sms_template_id: '',
+    // multi_send channel sender-account ids
+    email_integration_account_id: '',
+    whatsapp_integration_account_id: '',
+    rcs_integration_account_id: '',
+    sms_integration_account_id: '',
     fallback_channels: [],
     ab_template_id: '',
     integration_account_id: '',
@@ -165,6 +170,10 @@ function dbToFlowNodes(workflowSteps) {
         whatsapp_template_id: String(ad.whatsapp_template_id ?? ''),
         rcs_template_id: String(ad.rcs_template_id ?? ''),
         sms_template_id: String(ad.sms_template_id ?? ''),
+        email_integration_account_id: String(ad.email_integration_account_id ?? ''),
+        whatsapp_integration_account_id: String(ad.whatsapp_integration_account_id ?? ''),
+        rcs_integration_account_id: String(ad.rcs_integration_account_id ?? ''),
+        sms_integration_account_id: String(ad.sms_integration_account_id ?? ''),
         fallback_channels: Array.isArray(ad.fallback_channels) ? ad.fallback_channels : [],
         ab_template_id: String(ad.ab_template_id ?? ''),
         integration_account_id: String(ad.integration_account_id ?? ''),
@@ -422,15 +431,19 @@ function NodeConfigPanel({ node, onClose, onChange, msgTemplates, setMsgTemplate
   const isComm = ['email', 'whatsapp', 'sms', 'rcs'].includes(data.stepType);
   const isMultiSend = data.stepType === 'multi_send';
   const isWaRcs = ['whatsapp', 'rcs'].includes(data.stepType);
-  const filteredTpls = msgTemplates.filter(t => t.channel === data.stepType);
+  // Once a named account is picked for this step, only show templates synced for that
+  // account — otherwise show the company-default (unassigned) templates for this channel.
+  const filteredTpls = msgTemplates.filter(t => t.channel === data.stepType
+    && (data.integration_account_id ? String(t.integration_account_id) === String(data.integration_account_id) : !t.integration_account_id));
   const selectedTpl = filteredTpls.find(t => String(t.id) === String(data.template_id));
   const [syncing, setSyncing] = useState(false);
 
-  const syncAnantya = async (channelOverride) => {
+  const syncAnantya = async (channelOverride, accountIdOverride) => {
     const channel = channelOverride || data.stepType;
+    const acctParam = accountIdOverride ? `&account_id=${accountIdOverride}` : '';
     setSyncing(true);
     try {
-      const r = await api.get(`/api/templates/wa-sync?save=1&channel=${channel}`);
+      const r = await api.get(`/api/templates/wa-sync?save=1&channel=${channel}${acctParam}`);
       const fresh = await api.get('/api/templates?channel=' + channel);
       setMsgTemplates(prev => {
         const other = prev.filter(t => t.channel !== channel);
@@ -522,7 +535,7 @@ function NodeConfigPanel({ node, onClose, onChange, msgTemplates, setMsgTemplate
               <label style={{ fontSize: 11, fontWeight: 700, color: '#374151', flex: 1, marginBottom: 0 }}>Template</label>
               {isWaRcs && (
                 <button
-                  onClick={syncAnantya}
+                  onClick={() => syncAnantya(null, data.integration_account_id)}
                   disabled={syncing}
                   style={{ fontSize: 10, color: '#7c3aed', background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontWeight: 600 }}
                 >
@@ -573,7 +586,7 @@ function NodeConfigPanel({ node, onClose, onChange, msgTemplates, setMsgTemplate
             {integrationAccounts.some((account) => account.channel === data.stepType || account.channel === 'other') && (
               <div style={{ marginTop: 9 }}>
                 <label style={{ fontSize: 11, fontWeight: 700, color: '#374151', display: 'block', marginBottom: 4 }}>Send from account</label>
-                <select className="form-select form-select-sm" value={data.integration_account_id} onChange={e => onChange('integration_account_id', e.target.value)}>
+                <select className="form-select form-select-sm" value={data.integration_account_id} onChange={e => { onChange('integration_account_id', e.target.value); onChange('template_id', ''); }}>
                   <option value="">Company default account</option>
                   {integrationAccounts.filter((account) => account.channel === data.stepType || account.channel === 'other').map((account) => <option key={account.id} value={account.id}>{account.name} · {account.provider}</option>)}
                 </select>
@@ -584,8 +597,17 @@ function NodeConfigPanel({ node, onClose, onChange, msgTemplates, setMsgTemplate
 
         {/* Multi-Send: pick template per channel */}
         {isMultiSend && (() => {
-          const tplByChannel = (ch) => msgTemplates.filter(t => t.channel === ch);
-          const row = (ch, label, field, icon, color) => (
+          // Once a named account is picked for a channel, only show templates synced for
+          // that account — otherwise show the company-default (unassigned) templates.
+          const tplByChannel = (ch, accountId) => msgTemplates.filter(t => t.channel === ch
+            && (accountId ? String(t.integration_account_id) === String(accountId) : !t.integration_account_id));
+          const acctByChannel = (ch) => integrationAccounts.filter(a => a.channel === ch || a.channel === 'other');
+          const row = (ch, label, field, icon, color) => {
+            const accountField = `${ch}_integration_account_id`;
+            const channelAccounts = acctByChannel(ch);
+            const selectedAccountId = data[accountField];
+            const channelTpls = tplByChannel(ch, selectedAccountId);
+            return (
             <div key={ch} style={{ marginBottom: 14 }}>
               <div style={{ display: 'flex', alignItems: 'center', marginBottom: 4, gap: 6 }}>
                 <span style={{ fontSize: 10, fontWeight: 800, color, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
@@ -593,30 +615,38 @@ function NodeConfigPanel({ node, onClose, onChange, msgTemplates, setMsgTemplate
                 </span>
                 {['whatsapp','rcs'].includes(ch) && (
                   <button
-                    onClick={() => syncAnantya(ch)} disabled={syncing}
+                    onClick={() => syncAnantya(ch, selectedAccountId)} disabled={syncing}
                     style={{ fontSize: 10, color: '#7c3aed', background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontWeight: 600, marginLeft: 'auto' }}
                   >
                     <i className="bi bi-arrow-repeat me-1" />{syncing ? 'Syncing…' : 'Sync'}
                   </button>
                 )}
               </div>
+              {channelAccounts.length > 0 && (
+                <select className="form-select form-select-sm" style={{ marginBottom: 5 }} value={selectedAccountId}
+                  onChange={e => { onChange(accountField, e.target.value); onChange(field, ''); }}>
+                  <option value="">Company default account</option>
+                  {channelAccounts.map(a => <option key={a.id} value={a.id}>{a.name} · {a.provider}</option>)}
+                </select>
+              )}
               <select className="form-select form-select-sm" value={data[field]}
                 onChange={e => onChange(field, e.target.value)}>
                 <option value="">— Skip this channel —</option>
-                {tplByChannel(ch).map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+                {channelTpls.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
               </select>
-              {tplByChannel(ch).length === 0 && (
+              {channelTpls.length === 0 && (
                 <div style={{ fontSize: 10, color: '#b45309', marginTop: 3 }}>
                   No {label} templates yet.{['whatsapp','rcs'].includes(ch) ? ' Sync from Anantya.' : ''}
                 </div>
               )}
-              {(() => { const t = tplByChannel(ch).find(x => String(x.id) === String(data[field])); return t?.body ? (
+              {(() => { const t = channelTpls.find(x => String(x.id) === String(data[field])); return t?.body ? (
                 <div style={{ marginTop: 5, padding: '6px 8px', borderRadius: 5, background: '#f8fafc', border: '1px solid #e2e8f0', fontSize: 10, color: '#374151', lineHeight: 1.5, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
                   {t.body.slice(0, 120)}{t.body.length > 120 ? '…' : ''}
                 </div>
               ) : null; })()}
             </div>
-          );
+            );
+          };
           return (
             <div style={{ padding: '10px 12px', borderRadius: 7, background: '#f0f9ff', border: '1px solid #bae6fd', marginBottom: 12 }}>
               <div style={{ fontSize: 10, fontWeight: 800, color: '#0369a1', marginBottom: 10, textTransform: 'uppercase', letterSpacing: '0.07em' }}>
@@ -899,6 +929,10 @@ function BuilderCanvas({ initialNodes, initialEdges, msgTemplates, setMsgTemplat
             whatsapp_template_id: d.whatsapp_template_id ? Number(d.whatsapp_template_id) : null,
             rcs_template_id:      d.rcs_template_id      ? Number(d.rcs_template_id)      : null,
             sms_template_id:      d.sms_template_id      ? Number(d.sms_template_id)      : null,
+            email_integration_account_id:    d.email_integration_account_id    ? Number(d.email_integration_account_id)    : null,
+            whatsapp_integration_account_id: d.whatsapp_integration_account_id ? Number(d.whatsapp_integration_account_id) : null,
+            rcs_integration_account_id:      d.rcs_integration_account_id      ? Number(d.rcs_integration_account_id)      : null,
+            sms_integration_account_id:      d.sms_integration_account_id      ? Number(d.sms_integration_account_id)      : null,
           };
         }
         if (['email','whatsapp','rcs','sms'].includes(d.stepType)) {

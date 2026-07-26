@@ -150,7 +150,7 @@ export async function builder(req, res) {
   const campaign = await one('SELECT * FROM campaigns WHERE id=? AND company_id=? LIMIT 1', [Number(req.params.id), req.companyId]);
   if (!campaign) return fail(res, 'Campaign not found.', 404);
   const [templates, agents, stages, workflowSteps, integrationAccounts] = await Promise.all([
-    q("SELECT id,name,channel,subject,body,wa_template_id FROM templates WHERE status!='archived' AND company_id=? ORDER BY channel,name", [req.companyId]),
+    q("SELECT id,name,channel,subject,body,wa_template_id,integration_account_id FROM templates WHERE status!='archived' AND company_id=? ORDER BY channel,name", [req.companyId]),
     q("SELECT id,name FROM users WHERE role IN ('agent','manager') AND is_active=1 ORDER BY name"),
     q('SELECT id,name FROM pipeline_stages WHERE is_active=1 ORDER BY stage_order'),
     q('SELECT * FROM workflow_steps WHERE campaign_id=? ORDER BY step_order ASC', [campaign.id]),

@@ -18,20 +18,30 @@ export default function LeadTaskModal({ task, onClose }) {
   const toast = useToast();
   const navigate = useNavigate();
   const [meta, setMeta] = useState(null);
+  const [accounts, setAccounts] = useState([]);
+  const [waLabel, setWaLabel] = useState('');
   const [campaignId, setCampaignId] = useState('');
   const [enrolling, setEnrolling] = useState(false);
   const [channel, setChannel] = useState('email');
   const [templateId, setTemplateId] = useState('');
+  const [accountId, setAccountId] = useState('');
   const [message, setMessage] = useState('');
   const [sending, setSending] = useState(false);
 
   useEffect(() => { api.get('/api/meta').then(setMeta).catch(() => {}); }, []);
+  useEffect(() => { api.get('/api/settings/integration-accounts').then((d) => setAccounts(d?.accounts ?? [])).catch(() => {}); }, []);
+  useEffect(() => { api.get('/api/settings/integrations').then((d) => setWaLabel(d?.settings?.wa_anantya_waba_id || '')).catch(() => {}); }, []);
 
-  const templatesForChannel = (meta?.templates ?? []).filter((t) => t.channel === channel);
+  const accountsForChannel = accounts.filter((a) => a.channel === channel && a.is_active);
+  // Once a named account is picked, only show templates synced for that account —
+  // otherwise show the company-default (unassigned) templates for this channel.
+  const templatesForChannel = (meta?.templates ?? []).filter((t) => t.channel === channel
+    && (accountId ? String(t.integration_account_id) === String(accountId) : !t.integration_account_id));
 
   const pickChannel = (value) => {
     setChannel(value);
     setTemplateId('');
+    setAccountId('');
     setMessage('');
   };
 
@@ -39,6 +49,12 @@ export default function LeadTaskModal({ task, onClose }) {
     setTemplateId(id);
     const t = templatesForChannel.find((x) => String(x.id) === String(id));
     setMessage(t?.body || '');
+  };
+
+  const pickAccount = (id) => {
+    setAccountId(id);
+    setTemplateId('');
+    setMessage('');
   };
 
   const handleEnroll = async () => {
@@ -66,10 +82,12 @@ export default function LeadTaskModal({ task, onClose }) {
         channel,
         message: templateOnly ? '' : message,
         template_id: templateId || null,
+        integration_account_id: accountId || null,
       });
       toast('Message sent.', 'success');
       setMessage('');
       setTemplateId('');
+      setAccountId('');
     } catch (err) { toast(err.message, 'danger'); }
     finally { setSending(false); }
   };
@@ -90,7 +108,7 @@ export default function LeadTaskModal({ task, onClose }) {
               </button>
             )}
           </div>
-          <button className="crm-drawer-close flex-shrink-0" onClick={onClose}><i className="bi bi-x-lg text-13" /></button>
+          <button className="crm-modal-close" onClick={onClose}><i className="bi bi-x-lg text-13" /></button>
         </div>
 
         <div className="p-4">
@@ -121,6 +139,12 @@ export default function LeadTaskModal({ task, onClose }) {
                 </button>
               ))}
             </div>
+            {(accountsForChannel.length > 0 || (channel === 'whatsapp' && waLabel)) && (
+              <select className="crm-select w-100 mb-2" value={accountId} onChange={(e) => pickAccount(e.target.value)} disabled={accountsForChannel.length === 0}>
+                <option value="">{channel === 'whatsapp' && waLabel ? `Company default account (${waLabel})` : 'Company default account'}</option>
+                {accountsForChannel.map((a) => <option key={a.id} value={a.id}>{a.name} · {a.provider}</option>)}
+              </select>
+            )}
             <select className="crm-select w-100 mb-2" value={templateId} onChange={(e) => pickTemplate(e.target.value)}>
               <option value="">{templateOnly ? '— Select an approved template —' : '— Write a custom message —'}</option>
               {templatesForChannel.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}

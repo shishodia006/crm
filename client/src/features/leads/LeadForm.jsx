@@ -99,7 +99,7 @@ export default function LeadForm() {
               <div className="col-md-6">
                 <label className="form-label">Status</label>
                 <select name="status" value={form.status} onChange={handleChange} className="form-select">
-                  {['new','contacted','qualified','disqualified'].map((s) => <option key={s} value={s}>{s}</option>)}
+                  {['new','contacted','qualified','proposal','negotiation','won','lost','unsubscribed','invalid'].map((s) => <option key={s} value={s}>{s}</option>)}
                 </select>
               </div>
               <div className="col-12">

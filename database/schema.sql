@@ -197,6 +197,7 @@ CREATE TABLE IF NOT EXISTS `templates` (
   `wa_template_id` VARCHAR(100) DEFAULT NULL,        -- WhatsApp template name
   `media_url`   VARCHAR(500) DEFAULT NULL,
   `buttons`     JSON DEFAULT NULL,                   -- WA / RCS interactive buttons
+  `design_json` JSON DEFAULT NULL,                   -- email drag-drop builder blocks; body is the compiled HTML
   `status`      ENUM('draft','active','archived') NOT NULL DEFAULT 'draft',
   `created_by`  INT UNSIGNED DEFAULT NULL,
   `created_at`  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -722,6 +723,9 @@ CREATE TABLE IF NOT EXISTS `integration_accounts` (
   `webhook_secret` VARCHAR(255) DEFAULT NULL,
   `config` LONGTEXT DEFAULT NULL,        -- encrypted at rest (see server/src/utils/crypto.js) — not JSON-typed since ciphertext isn't valid JSON
   `is_active` TINYINT(1) NOT NULL DEFAULT 1,
+  `daily_send_limit` INT UNSIGNED DEFAULT NULL,   -- NULL = unlimited
+  `sent_today` INT UNSIGNED NOT NULL DEFAULT 0,
+  `sent_today_date` DATE DEFAULT NULL,
   `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   FOREIGN KEY (`company_id`) REFERENCES `companies`(`id`) ON DELETE CASCADE,
@@ -730,6 +734,8 @@ CREATE TABLE IF NOT EXISTS `integration_accounts` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 ALTER TABLE `communications` ADD COLUMN IF NOT EXISTS `integration_account_id` INT UNSIGNED DEFAULT NULL, ADD INDEX IF NOT EXISTS `idx_communications_integration_account` (`integration_account_id`);
+-- Which named account (e.g. a specific WhatsApp/Anantya number) a template was synced for; NULL = company-default.
+ALTER TABLE `templates` ADD COLUMN IF NOT EXISTS `integration_account_id` INT UNSIGNED DEFAULT NULL, ADD INDEX IF NOT EXISTS `idx_templates_integration_account` (`integration_account_id`);
 -- integration_accounts.config now stores encrypted ciphertext, not raw JSON — drop the JSON validity check for existing installs.
 ALTER TABLE `integration_accounts` MODIFY COLUMN `config` LONGTEXT DEFAULT NULL;
 ALTER TABLE `integrations` MODIFY COLUMN `config` LONGTEXT DEFAULT NULL;
@@ -770,7 +776,7 @@ CREATE TABLE IF NOT EXISTS `conversations` (
   `id`                    INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
   `company_id`            INT UNSIGNED NOT NULL,
   `lead_id`               INT UNSIGNED NOT NULL,
-  `channel`               ENUM('email','whatsapp','sms','call') NOT NULL DEFAULT 'email',
+  `channel`               ENUM('email','whatsapp','sms','call','rcs') NOT NULL DEFAULT 'email',
   `assigned_to`           INT UNSIGNED DEFAULT NULL,
   `status`                ENUM('open','closed') NOT NULL DEFAULT 'open',
   `last_message_at`       DATETIME DEFAULT NULL,
@@ -792,7 +798,7 @@ CREATE TABLE IF NOT EXISTS `conversation_messages` (
   `conversation_id`   INT UNSIGNED NOT NULL,
   `communication_id`  INT UNSIGNED DEFAULT NULL,
   `direction`         ENUM('in','out') NOT NULL DEFAULT 'out',
-  `channel`           ENUM('email','whatsapp','sms','call') NOT NULL,
+  `channel`           ENUM('email','whatsapp','sms','call','rcs') NOT NULL,
   `body`              MEDIUMTEXT NOT NULL,
   `sender_user_id`    INT UNSIGNED DEFAULT NULL,
   `status`            ENUM('queued','sent','delivered','failed','received') NOT NULL DEFAULT 'sent',
@@ -804,6 +810,9 @@ CREATE TABLE IF NOT EXISTS `conversation_messages` (
   INDEX `idx_conversation` (`conversation_id`),
   INDEX `idx_created`      (`created_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Dedupe key for inbound replies (IMAP re-scans, redelivered WhatsApp webhooks) so the same message isn't stored twice.
+ALTER TABLE `conversation_messages` ADD COLUMN IF NOT EXISTS `provider_msg_id` VARCHAR(255) DEFAULT NULL, ADD UNIQUE INDEX IF NOT EXISTS `uniq_conversation_messages_provider_msg` (`channel`,`provider_msg_id`);
 
 -- ============================================================
 -- CUSTOM REPORTS
