@@ -1,0 +1,130 @@
+import { pool, q, run } from './pool.js';
+
+// Runs once at server startup and brings the DB schema up to date with
+// database/migrations/001..008, without relying on "ADD COLUMN IF NOT EXISTS"
+// (older MySQL — anything before 8.0.29 — rejects that syntax with ERROR 1064).
+// Every check below queries INFORMATION_SCHEMA first and only runs the ALTER
+// if the column/index/constraint is actually missing, so this is safe to run
+// on every restart regardless of how far along the DB already is.
+
+async function columnExists(table, column) {
+  const row = await q(
+    'SELECT 1 FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME=? AND COLUMN_NAME=? LIMIT 1',
+    [table, column]
+  );
+  return row.length > 0;
+}
+
+async function indexExists(table, indexName) {
+  const row = await q(
+    'SELECT 1 FROM information_schema.STATISTICS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME=? AND INDEX_NAME=? LIMIT 1',
+    [table, indexName]
+  );
+  return row.length > 0;
+}
+
+async function constraintExists(table, constraintName) {
+  const row = await q(
+    'SELECT 1 FROM information_schema.TABLE_CONSTRAINTS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME=? AND CONSTRAINT_NAME=? LIMIT 1',
+    [table, constraintName]
+  );
+  return row.length > 0;
+}
+
+// DDL (ALTER TABLE) goes through pool.query() rather than the app's run()/q()
+// helpers — those use MySQL's prepared-statement protocol (COM_STMT_PREPARE),
+// which some MySQL builds refuse for DDL. pool.query() uses the plain text
+// protocol, the same thing running the statement in the mysql CLI does.
+async function ensureColumn(table, column, ddl, indexName, indexDdl) {
+  if (!(await columnExists(table, column))) {
+    await pool.query(`ALTER TABLE \`${table}\` ADD COLUMN ${ddl}`);
+    console.log(`[auto-migrate] added ${table}.${column}`);
+  }
+  if (indexName && !(await indexExists(table, indexName))) {
+    await pool.query(`ALTER TABLE \`${table}\` ${indexDdl}`);
+    console.log(`[auto-migrate] added index ${indexName} on ${table}`);
+  }
+}
+
+async function ensureForeignKey(table, constraintName, ddl) {
+  if (!(await constraintExists(table, constraintName))) {
+    try {
+      await pool.query(`ALTER TABLE \`${table}\` ADD CONSTRAINT \`${constraintName}\` ${ddl}`);
+      console.log(`[auto-migrate] added FK ${constraintName} on ${table}`);
+    } catch (err) {
+      // Non-fatal: e.g. orphaned rows that violate the FK on a DB that was
+      // hand-patched out of order. Log it, don't block server startup over it.
+      console.error(`[auto-migrate] FK ${constraintName} on ${table} skipped:`, err.message);
+    }
+  }
+}
+
+export async function runAutoMigrations() {
+  try {
+    // 001_multicompany
+    await ensureColumn('leads', 'company_id', '`company_id` INT UNSIGNED DEFAULT NULL', 'idx_leads_company', 'ADD INDEX `idx_leads_company` (`company_id`)');
+    await ensureColumn('campaigns', 'company_id', '`company_id` INT UNSIGNED DEFAULT NULL', 'idx_campaigns_company', 'ADD INDEX `idx_campaigns_company` (`company_id`)');
+    await ensureColumn('templates', 'company_id', '`company_id` INT UNSIGNED DEFAULT NULL', 'idx_templates_company', 'ADD INDEX `idx_templates_company` (`company_id`)');
+    await ensureColumn('deals', 'company_id', '`company_id` INT UNSIGNED DEFAULT NULL', 'idx_deals_company', 'ADD INDEX `idx_deals_company` (`company_id`)');
+    await ensureColumn('tasks', 'company_id', '`company_id` INT UNSIGNED DEFAULT NULL', 'idx_tasks_company', 'ADD INDEX `idx_tasks_company` (`company_id`)');
+    await ensureColumn('integrations', 'company_id', '`company_id` INT UNSIGNED DEFAULT NULL', 'idx_integrations_company', 'ADD INDEX `idx_integrations_company` (`company_id`)');
+    await ensureColumn('segments', 'company_id', '`company_id` INT UNSIGNED DEFAULT NULL', 'idx_segments_company', 'ADD INDEX `idx_segments_company` (`company_id`)');
+    await ensureColumn('campaigns', 'template_id', '`template_id` INT UNSIGNED DEFAULT NULL');
+    await ensureColumn('campaigns', 'audience_filter', '`audience_filter` JSON DEFAULT NULL');
+    await ensureColumn('campaigns', 'sent_count', '`sent_count` INT UNSIGNED NOT NULL DEFAULT 0');
+    await ensureColumn('users', 'timezone', '`timezone` VARCHAR(60) DEFAULT NULL');
+    await ensureColumn('users', 'status', "`status` ENUM('invited','active') NOT NULL DEFAULT 'active'");
+
+    // Backfill so pre-existing rows aren't invisible to company_id filters
+    const [company] = await q('SELECT id FROM companies ORDER BY id ASC LIMIT 1');
+    if (!company) {
+      await run("INSERT INTO companies (name, slug) VALUES ('Default Workspace','default-workspace')");
+    }
+    const [{ id: defaultCompanyId }] = await q('SELECT id FROM companies ORDER BY id ASC LIMIT 1');
+    for (const table of ['leads', 'campaigns', 'templates', 'deals', 'tasks', 'integrations', 'segments']) {
+      await run(`UPDATE \`${table}\` SET company_id=? WHERE company_id IS NULL`, [defaultCompanyId]);
+    }
+    await run(
+      'INSERT IGNORE INTO company_users (company_id, user_id) SELECT ?, id FROM users WHERE is_active=1',
+      [defaultCompanyId]
+    );
+
+    // 002_integration_routing
+    await ensureColumn('communications', 'integration_account_id', '`integration_account_id` INT UNSIGNED DEFAULT NULL', 'idx_communications_integration_account', 'ADD INDEX `idx_communications_integration_account` (`integration_account_id`)');
+    await ensureForeignKey('communications', 'fk_communications_integration_account', 'FOREIGN KEY (`integration_account_id`) REFERENCES `integration_accounts`(`id`) ON DELETE SET NULL');
+
+    // 005_conversation_rcs_channel (MODIFY COLUMN is always safe to re-run, no guard needed)
+    await pool.query("ALTER TABLE `conversations` MODIFY COLUMN `channel` ENUM('email','whatsapp','sms','call','rcs') NOT NULL DEFAULT 'email'");
+    await pool.query("ALTER TABLE `conversation_messages` MODIFY COLUMN `channel` ENUM('email','whatsapp','sms','call','rcs') NOT NULL");
+
+    // 006_email_module
+    await ensureColumn('templates', 'design_json', '`design_json` JSON DEFAULT NULL');
+    await ensureColumn('integration_accounts', 'daily_send_limit', '`daily_send_limit` INT UNSIGNED DEFAULT NULL');
+    await ensureColumn('integration_accounts', 'sent_today', '`sent_today` INT UNSIGNED NOT NULL DEFAULT 0');
+    await ensureColumn('integration_accounts', 'sent_today_date', '`sent_today_date` DATE DEFAULT NULL');
+
+    // 007_template_integration_account
+    await ensureColumn('templates', 'integration_account_id', '`integration_account_id` INT UNSIGNED DEFAULT NULL', 'idx_templates_integration_account', 'ADD INDEX `idx_templates_integration_account` (`integration_account_id`)');
+    await ensureForeignKey('templates', 'fk_templates_integration_account', 'FOREIGN KEY (`integration_account_id`) REFERENCES `integration_accounts`(`id`) ON DELETE SET NULL');
+
+    // 008_conversation_inbound
+    await ensureColumn('conversation_messages', 'provider_msg_id', '`provider_msg_id` VARCHAR(255) DEFAULT NULL', 'uniq_conversation_messages_provider_msg', 'ADD UNIQUE INDEX `uniq_conversation_messages_provider_msg` (`channel`,`provider_msg_id`)');
+
+    // 004_sms_mshastra (idempotent via ON DUPLICATE KEY)
+    await run(`
+      INSERT INTO settings (\`key\`, \`value\`, \`group\`) VALUES
+        ('sms_provider','mshastra','sms'), ('sms_mshastra_url','https://mshastra.com/sendurl.aspx','sms'),
+        ('sms_mshastra_user','','sms'), ('sms_mshastra_pwd','','sms'), ('sms_mshastra_sender','','sms'),
+        ('sms_mshastra_country','91','sms'), ('sms_api_url','','sms'), ('sms_api_key','','sms'), ('sms_sender','','sms')
+      ON DUPLICATE KEY UPDATE
+        \`value\` = CASE WHEN \`value\` IS NULL OR \`value\`='' THEN VALUES(\`value\`) ELSE \`value\` END,
+        \`group\` = VALUES(\`group\`)
+    `);
+
+    console.log('[auto-migrate] schema check complete — up to date.');
+  } catch (err) {
+    // Never crash the whole server over a migration hiccup — log loudly so it's
+    // visible in `pm2 logs`, but let the app still come up with whatever schema exists.
+    console.error('[auto-migrate] FAILED:', err.message);
+  }
+}

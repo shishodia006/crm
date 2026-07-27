@@ -8,6 +8,7 @@ import { pollEmailReplies } from './src/services/emailInbox.service.js';
 import { pollAllSalesforceCompanies } from './src/services/salesforce.service.js';
 import { pollAllLinkedinCompanies } from './src/services/linkedin.service.js';
 import { pool } from './src/db/pool.js';
+import { runAutoMigrations } from './src/db/autoMigrate.js';
 
 const isCron = process.argv.includes('--cron');
 
@@ -30,6 +31,7 @@ if (isCron) {
   });
 } else {
   const app = createApp();
+  await runAutoMigrations();
   app.listen(config.port, '0.0.0.0', async () => {
     // Check DB connection
     let dbStatus = '✓ Connected';
