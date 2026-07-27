@@ -1,6 +1,7 @@
 import { q, one, run } from '../db/pool.js';
 import { sendCommunication } from './comm.service.js';
 import { insertLead } from './lead.service.js';
+import { notifyUsers, notifyRecipientsForLead } from './notifications.service.js';
 
 // Channels where an inbound message from a phone number nobody has talked to yet
 // should still show up on the panel — a business WhatsApp/RCS number receiving a
@@ -219,6 +220,19 @@ export async function recordInboundMessage({
       'UPDATE conversations SET last_message_at=COALESCE(?,NOW()), last_message_preview=?, unread_count=unread_count+1 WHERE id=?',
       [occurredAt, truncate(body), conversation.id]
     );
+    try {
+      const recipients = await notifyRecipientsForLead(companyId || lead.company_id, lead.assigned_to);
+      await notifyUsers(recipients, {
+        type: 'new_message',
+        title: `New ${channel} reply from ${lead.name}`,
+        body: truncate(body),
+        link: `/conversations?id=${conversation.id}`,
+      });
+    } catch (err) {
+      // A missed notification shouldn't fail the whole inbound-message write —
+      // the message itself is already saved at this point.
+      console.error('[conversation] notifyUsers failed:', err.message);
+    }
     return { recorded: true, conversationId: conversation.id, messageId: insert.insertId, leadId: lead.id };
   } catch (err) {
     if (err.code === 'ER_DUP_ENTRY') return { recorded: false, duplicate: true, leadId: lead.id };

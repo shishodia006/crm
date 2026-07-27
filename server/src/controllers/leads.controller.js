@@ -272,6 +272,29 @@ export async function enroll(req, res) {
   ok(res, { enrolled }, enrolled ? 'Lead enrolled in campaign.' : 'Already enrolled or ineligible.');
 }
 
+// Checkbox-select on the Leads list -> "Enroll Selected in Campaign". Runs inline
+// (not queued as a job) since selections are bounded by the page size (max 100).
+export async function bulkEnroll(req, res) {
+  const campaignId = Number(req.body.campaign_id);
+  const leadIds = Array.isArray(req.body.lead_ids) ? req.body.lead_ids.map(Number).filter(Boolean) : [];
+  if (!campaignId) return fail(res, 'campaign_id required', 422);
+  if (!leadIds.length) return fail(res, 'No leads selected.', 422);
+
+  const campaign = await one('SELECT id FROM campaigns WHERE id=? AND company_id=? LIMIT 1', [campaignId, req.companyId]);
+  if (!campaign) return fail(res, 'Campaign not found.', 404);
+
+  const ownLeads = await q(
+    `SELECT id FROM leads WHERE company_id=? AND id IN (${leadIds.map(() => '?').join(',')})`,
+    [req.companyId, ...leadIds]
+  );
+  let enrolled = 0;
+  for (const row of ownLeads) {
+    if (await enrollLead(Number(row.id), campaignId)) enrolled += 1;
+  }
+  const skipped = ownLeads.length - enrolled;
+  ok(res, { enrolled, skipped, total: ownLeads.length }, `Enrolled ${enrolled} of ${ownLeads.length} lead(s)${skipped ? ` — ${skipped} already enrolled or ineligible` : ''}.`);
+}
+
 export async function addScore(req, res) {
   const score = await addScoreEvent(Number(req.params.id), req.body.event || 'manual');
   ok(res, { score }, 'Score updated.');

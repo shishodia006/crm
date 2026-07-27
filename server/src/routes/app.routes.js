@@ -65,6 +65,7 @@ router.get('/leads/:id', requireAuth, asyncRoute(leads.show));
 router.patch('/leads/:id', requireAuth, requireCompanyRole('agent'), asyncRoute(leads.update));
 router.delete('/leads/:id', adminOnly, asyncRoute(leads.destroy));
 router.post('/leads/:id/enroll', requireAuth, requireCompanyRole('agent'), asyncRoute(leads.enroll));
+router.post('/leads/bulk-enroll', requireAuth, requireCompanyRole('agent'), asyncRoute(leads.bulkEnroll));
 router.post('/leads/:id/score', requireAuth, asyncRoute(leads.addScore));
 router.get('/leads/:id/timeline', requireAuth, asyncRoute(leads.timeline));
 router.get('/leads/:id/enrollments/:eid', requireAuth, asyncRoute(leads.enrollmentDetail));

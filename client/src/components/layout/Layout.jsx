@@ -6,6 +6,7 @@ import { initials, timeAgo } from '../../utils/formatters.js';
 import { api } from '../../services/api.js';
 import { LogoMark } from '../common/Logo.jsx';
 import { PageHeaderContext } from '../../context/PageHeaderContext.jsx';
+import { playNotificationSound } from '../../utils/sound.js';
 
 /* ── Page title map ─────────────────────────────────────── */
 const PAGE_TITLES = {
@@ -147,14 +148,23 @@ function NotificationBell() {
   const wrapRef = useRef(null);
   const [open, setOpen] = useState(false);
   const [data, setData] = useState({ unread: 0, items: [] });
+  const prevUnreadRef = useRef(null);
 
   const load = useCallback(() => {
-    api.get('/api/notifications').then(setData).catch(() => {});
+    api.get('/api/notifications').then((res) => {
+      // First load after mount just establishes the baseline — don't ding for
+      // notifications that were already sitting there before this tab opened.
+      if (prevUnreadRef.current !== null && res.unread > prevUnreadRef.current) {
+        playNotificationSound();
+      }
+      prevUnreadRef.current = res.unread;
+      setData(res);
+    }).catch(() => {});
   }, []);
 
   useEffect(() => {
     load();
-    const iv = setInterval(load, 60000);
+    const iv = setInterval(load, 15000);
     return () => clearInterval(iv);
   }, [load]);
 

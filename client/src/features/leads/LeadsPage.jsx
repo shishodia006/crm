@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useResource } from '../../hooks/useResource.js';
 import LoadingBox from '../../components/common/LoadingBox.jsx';
@@ -47,6 +47,14 @@ export default function LeadsPage() {
     search: '', status: '', category: '', source_id: '', assigned: '', page: 1, limit: 25,
   });
   const [importing, setImporting] = useState(false);
+  const [selectedIds, setSelectedIds] = useState(() => new Set());
+  const [campaigns, setCampaigns] = useState([]);
+  const [enrollCampaignId, setEnrollCampaignId] = useState('');
+  const [enrolling, setEnrolling] = useState(false);
+
+  useEffect(() => {
+    api.get('/api/campaigns').then((d) => setCampaigns(d?.campaigns ?? [])).catch(() => {});
+  }, []);
 
   const qs = new URLSearchParams(
     Object.fromEntries(Object.entries(filters).filter(([, v]) => v !== ''))
@@ -69,7 +77,42 @@ export default function LeadsPage() {
     window.location = `/api/leads/export?${eq}`;
   };
 
+  const toggleSelect = (id) => setSelectedIds((prev) => {
+    const next = new Set(prev);
+    if (next.has(id)) next.delete(id); else next.add(id);
+    return next;
+  });
+  const allOnPageSelected = leads.length > 0 && leads.every((l) => selectedIds.has(l.id));
+  const toggleSelectAll = () => setSelectedIds((prev) => {
+    const next = new Set(prev);
+    if (allOnPageSelected) leads.forEach((l) => next.delete(l.id));
+    else leads.forEach((l) => next.add(l.id));
+    return next;
+  });
+
+  const handleBulkEnroll = async () => {
+    if (!enrollCampaignId || selectedIds.size === 0) return;
+    setEnrolling(true);
+    try {
+      const r = await api.post('/api/leads/bulk-enroll', { lead_ids: [...selectedIds], campaign_id: Number(enrollCampaignId) });
+      toast(`Enrolled ${r.enrolled} of ${r.total} lead(s)${r.skipped ? ` — ${r.skipped} already enrolled or ineligible` : ''}.`, 'success');
+      setSelectedIds(new Set());
+      setEnrollCampaignId('');
+    } catch (err) {
+      toast(err.message || 'Bulk enroll failed.', 'danger');
+    } finally {
+      setEnrolling(false);
+    }
+  };
+
   const columns = [
+    { label: (
+        <input type="checkbox" className="form-check-input" checked={allOnPageSelected} onChange={toggleSelectAll} />
+      ), key: '_select', render: (r) => (
+        <input type="checkbox" className="form-check-input" checked={selectedIds.has(r.id)}
+          onClick={(e) => e.stopPropagation()} onChange={() => toggleSelect(r.id)} />
+      )
+    },
     { label: 'Name', render: (r) => (
       <div>
         <div className="fw-semibold text-13 text-dark">{r.name}</div>
@@ -200,6 +243,25 @@ export default function LeadsPage() {
           <i className="bi bi-file-earmark-arrow-down me-1" />Download Sample
         </button>
       </div>
+
+      {/* Bulk enroll bar */}
+      {selectedIds.size > 0 && (
+        <div className="card crm-card-sm mb-3 border-primary">
+          <div className="card-body py-2 d-flex gap-2 align-items-center flex-wrap">
+            <span className="text-13 fw-semibold">{selectedIds.size} lead{selectedIds.size === 1 ? '' : 's'} selected</span>
+            <select className="form-select form-select-sm w-auto" value={enrollCampaignId} onChange={(e) => setEnrollCampaignId(e.target.value)}>
+              <option value="">— Select Campaign —</option>
+              {campaigns.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+            </select>
+            <button className="btn-crm btn-crm-sm" disabled={!enrollCampaignId || enrolling} onClick={handleBulkEnroll}>
+              {enrolling ? 'Enrolling…' : 'Enroll Selected in Campaign'}
+            </button>
+            <button className="btn btn-sm btn-outline-secondary ms-auto" onClick={() => setSelectedIds(new Set())}>
+              Clear selection
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Filters */}
       <div className="card crm-card-sm mb-3">

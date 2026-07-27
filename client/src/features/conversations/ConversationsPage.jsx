@@ -4,6 +4,7 @@ import { useToast } from '../../hooks/useToast.js';
 import { api } from '../../services/api.js';
 import { initials, timeAgo, money } from '../../utils/formatters.js';
 import LoadingBox from '../../components/common/LoadingBox.jsx';
+import { playNotificationSound } from '../../utils/sound.js';
 
 const FILTERS = [
   { key: 'all',        label: 'All' },
@@ -230,7 +231,11 @@ export default function ConversationsPage() {
   const toast = useToast();
   const [filter, setFilter]       = useState('all');
   const [search, setSearch]       = useState('');
-  const [selectedId, setSelectedId] = useState(null);
+  // Deep-link support: a notification for a new reply points at ?id=<conversationId>.
+  const [selectedId, setSelectedId] = useState(() => {
+    const id = new URLSearchParams(window.location.search).get('id');
+    return id ? Number(id) : null;
+  });
   const [reply, setReply]         = useState('');
   const [sending, setSending]     = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
@@ -280,6 +285,19 @@ export default function ConversationsPage() {
   const conversation = threadData?.conversation;
   const deal = threadData?.deal;
   const messages = threadData?.messages ?? [];
+
+  // Ding when a new inbound reply lands in the thread that's currently open —
+  // the notification bell already covers replies on threads you're not looking at.
+  const lastInboundIdRef = useRef(null);
+  useEffect(() => {
+    if (!messages.length) return;
+    const lastInbound = [...messages].reverse().find((m) => m.direction === 'in');
+    if (!lastInbound) return;
+    if (lastInboundIdRef.current !== null && Number(lastInbound.id) !== lastInboundIdRef.current) {
+      playNotificationSound();
+    }
+    lastInboundIdRef.current = Number(lastInbound.id);
+  }, [messages]);
 
   return (
     <div className="crm-conv-page">
