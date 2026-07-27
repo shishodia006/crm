@@ -886,7 +886,7 @@
 .react-flow__handle { transition: transform 0.15s, box-shadow 0.15s; }
 
 /* ── Conversations (inbox) ──────────────────────────────── */
-.crm-conv-page { display: flex; flex-direction: column; height: calc(100vh - 132px); }
+.crm-conv-page { display: flex; flex-direction: column; height: calc(100vh - 112px); }
 
 .crm-conv-tabs { display: flex; gap: 6px; flex-wrap: wrap; }
 .crm-conv-tab {
@@ -1154,6 +1154,9 @@
    ══════════════════════════════════════════════════════════ */
 
 .crm-analyst-chat { height: 65vh; }
+/* Analyst replies are long-form analysis, not short chat lines — let them use
+   most of the card width instead of the 70% cap shared with Conversations. */
+.crm-analyst-chat .crm-msg-row { max-width: 92%; }
 
 .crm-analyst-avatar {
   width: 30px; height: 30px; border-radius: 50%;

@@ -302,11 +302,8 @@ export default function ConversationsPage() {
   return (
     <div className="crm-conv-page">
       {/* Header */}
-      <div className="d-flex align-items-start justify-content-between mb-3">
-        <div>
-          <h5 className="fw-bold mb-0 text-brand">Conversations</h5>
-          <div className="text-12 text-muted-2">Every email, WhatsApp, SMS, and call in one inbox</div>
-        </div>
+      <div className="d-flex align-items-center justify-content-between mb-3">
+        <div className="text-12 text-muted-2">Every email, WhatsApp, SMS, and call in one inbox</div>
         <button className="btn-crm" onClick={() => setModalOpen(true)}>
           <i className="bi bi-plus-lg" />New Message
         </button>
