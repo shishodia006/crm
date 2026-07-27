@@ -47,6 +47,18 @@ export async function enrollLead(leadId, campaignId, conn = undefined) {
     enrollmentId = Number(result.insertId);
   }
   await run('INSERT IGNORE INTO enrollment_step_logs (enrollment_id,step_id,status) VALUES (?,?,?)', [enrollmentId, first.id, 'pending'], db);
+
+  // A step with no delay (or a delay that's already elapsed) shouldn't sit around
+  // waiting for the next 1-minute scheduler tick — send it right away. Steps with
+  // a real delay (set in the Builder) are unaffected: nextExecuteAt is in the
+  // future, so the scheduler picks those up at the right time as before.
+  if (new Date(nextExecuteAt).getTime() <= Date.now()) {
+    try {
+      await executeWorkflowStep({ enrollment_id: enrollmentId, lead_id: leadId, campaign_id: campaignId, current_step_id: first.id, next_execute_at: nextExecuteAt });
+    } catch (error) {
+      console.error(`DripEngine immediate-send error enrollment #${enrollmentId}:`, error.message);
+    }
+  }
   return true;
 }
 
