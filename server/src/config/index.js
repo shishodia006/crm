@@ -33,6 +33,7 @@ export const config = {
     ? path.resolve(__dirname, '../..', process.env.UPLOAD_PATH)
     : path.resolve(__dirname, '../../../uploads'),
   port: Number(process.env.PORT || 8090),
+ 
   db: {
     host: process.env.DB_HOST || '127.0.0.1',
     port: Number(process.env.DB_PORT || 3306),
@@ -40,5 +41,5 @@ export const config = {
     user: process.env.DB_USER || 'root',
     password: process.env.DB_PASS || '',
     charset: 'utf8mb4'
-  }
+}
 };
