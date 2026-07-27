@@ -60,6 +60,7 @@ router.post('/leads', requireAuth, requireCompanyRole('agent'), asyncRoute(leads
 router.get('/leads/export', requireAuth, asyncRoute(leads.exportCsv));
 router.get('/leads/import/sample', requireAuth, asyncRoute(leads.sampleImport));
 router.post('/leads/import', requireAuth, upload.single('csv'), asyncRoute(leads.importCsv));
+router.get('/leads/check-duplicate', requireAuth, asyncRoute(leads.checkDuplicate));
 router.get('/leads/:id', requireAuth, asyncRoute(leads.show));
 router.patch('/leads/:id', requireAuth, requireCompanyRole('agent'), asyncRoute(leads.update));
 router.delete('/leads/:id', adminOnly, asyncRoute(leads.destroy));
@@ -93,7 +94,7 @@ router.get('/segments/:id/members', requireAuth, asyncRoute(segments.members));
 router.post('/segments/:id/members', requireAuth, requireCompanyRole('agent'), asyncRoute(segments.addMembers));
 router.delete('/segments/:id/members/:leadId', requireAuth, requireCompanyRole('agent'), asyncRoute(segments.removeMember));
 router.delete('/segments/:id', requireAuth, requireCompanyRole('agent'), asyncRoute(segments.destroy));
-router.get('/campaigns/:id/builder', adminOnly, asyncRoute(campaigns.builder));
+router.get('/campaigns/:id/builder', requireAuth, asyncRoute(campaigns.builder));
 router.post('/campaigns/:id/steps', adminOnly, requireCompanyRole('manager'), asyncRoute(campaigns.saveSteps));
 
 // Pipeline

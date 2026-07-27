@@ -46,6 +46,7 @@ export default function LeadsPage() {
   const [filters, setFilters] = useState({
     search: '', status: '', category: '', source_id: '', assigned: '', page: 1, limit: 25,
   });
+  const [importing, setImporting] = useState(false);
 
   const qs = new URLSearchParams(
     Object.fromEntries(Object.entries(filters).filter(([, v]) => v !== ''))
@@ -172,14 +173,27 @@ export default function LeadsPage() {
         <button className="btn btn-sm btn-outline-secondary rounded-crm-xs text-13" onClick={handleExport}>
           <i className="bi bi-download me-1" />Export CSV
         </button>
-        <label className="btn btn-sm btn-outline-secondary rounded-crm-xs text-13 mb-0 cursor-pointer">
-          <i className="bi bi-upload me-1" />Import CSV/Excel
-          <input type="file" accept=".csv,.xlsx,.xls" className="d-none" onChange={async (e) => {
+        <label
+          className={`btn btn-sm btn-outline-secondary rounded-crm-xs text-13 mb-0 ${importing ? '' : 'cursor-pointer'}`}
+          style={importing ? { opacity: 0.65, pointerEvents: 'none' } : undefined}
+        >
+          {importing
+            ? <><span className="spinner-border spinner-border-sm me-1" role="status" />Importing…</>
+            : <><i className="bi bi-upload me-1" />Import CSV/Excel</>}
+          <input type="file" accept=".csv,.xlsx,.xls" className="d-none" disabled={importing} onChange={async (e) => {
             const file = e.target.files[0]; if (!file) return;
             const fd = new FormData(); fd.append('csv', file);
-            try { const r = await api.post('/api/leads/import', fd); toast(`Imported ${r.imported} leads`, 'success'); reload(); }
-            catch (err) { toast(err.message, 'danger'); }
-            e.target.value = '';
+            setImporting(true);
+            try {
+              const r = await api.post('/api/leads/import', fd);
+              toast(`Imported ${r.imported} leads${r.duplicates ? `, ${r.duplicates} duplicate(s)` : ''}${r.failed ? `, ${r.failed} failed` : ''} (of ${r.total}).`, r.failed ? 'warning' : 'success');
+              reload();
+            } catch (err) {
+              toast(err.message, 'danger');
+            } finally {
+              setImporting(false);
+              e.target.value = '';
+            }
           }} />
         </label>
         <button className="btn btn-sm btn-outline-secondary rounded-crm-xs text-13" onClick={() => { window.location = '/api/leads/import/sample'; }}>

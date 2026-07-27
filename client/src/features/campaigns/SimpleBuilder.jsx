@@ -230,6 +230,7 @@ export default function SimpleBuilder() {
   const [addingStep, setAddingStep] = useState(false);
   const [dragIndex, setDragIndex] = useState(null);
   const [saving, setSaving] = useState(false);
+  const [loadError, setLoadError] = useState(null);
 
   useEffect(() => {
     api.get(`/api/campaigns/${id}/builder`).then((d) => {
@@ -247,7 +248,7 @@ export default function SimpleBuilder() {
         action_data: parseActionData(s.action_data),
       })));
       setLoading(false);
-    }).catch(() => setLoading(false));
+    }).catch((err) => { setLoadError(err.message || 'Failed to load this sequence.'); setLoading(false); });
   }, [id]);
 
   const linear = useMemo(() => isLinear(steps.map((s) => ({ type: s.type }))), [steps]);
@@ -256,6 +257,7 @@ export default function SimpleBuilder() {
   }, [campaign]);
 
   if (loading) return <LoadingBox />;
+  if (loadError) return <div className="alert alert-danger">{loadError}</div>;
   if (!campaign) return <p className="text-muted">Sequence not found.</p>;
 
   const updateStep = (uid, patch) => setSteps((prev) => prev.map((s) => (s.uid === uid ? { ...s, ...patch } : s)));

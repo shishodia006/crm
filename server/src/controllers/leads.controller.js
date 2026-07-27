@@ -4,7 +4,7 @@ import { parse as parseCsv } from 'csv-parse/sync';
 import { one, q, run, updateById } from '../db/pool.js';
 import { ok, fail } from '../utils/response.js';
 import { csvEscape } from '../utils/helpers.js';
-import { listLeads, processLead, leadTimeline, normalizeImportRow } from '../services/lead.service.js';
+import { listLeads, processLead, leadTimeline, normalizeImportRow, findLeadByEmailOrMobile } from '../services/lead.service.js';
 import { enrollLead } from '../services/drip.service.js';
 import { addScoreEvent } from '../services/score.service.js';
 
@@ -29,6 +29,17 @@ export async function store(req, res) {
   const result = await processLead(req.body, sourceId, null, req);
   if (!result.success) return fail(res, 'Validation failed', 422, result.errors);
   ok(res, result, result.is_duplicate ? 'Lead already exists.' : 'Lead created.');
+}
+
+// Used by the manual "New Lead" form to warn the user before submit — same
+// email/mobile lookup processLead uses internally to decide merge-vs-insert.
+export async function checkDuplicate(req, res) {
+  const email = String(req.query.email || '').trim().toLowerCase();
+  let mobile = String(req.query.mobile || '').trim().replace(/[^\d+]/g, '');
+  if (/^\d{10}$/.test(mobile)) mobile = `+91${mobile}`;
+  if (!email && !mobile) return ok(res, { duplicate: null });
+  const existing = await findLeadByEmailOrMobile(email, mobile, req.companyId);
+  ok(res, { duplicate: existing ? { id: existing.id, name: existing.name, email: existing.email, mobile: existing.mobile, status: existing.status } : null });
 }
 
 export async function exportCsv(req, res) {
