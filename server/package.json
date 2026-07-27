@@ -12,6 +12,7 @@
   "dependencies": {
     "bcryptjs": "^2.4.3",
     "csv-parse": "^5.5.6",
+    "dotenv": "^17.4.2",
     "exceljs": "^4.4.0",
     "express": "^4.19.2",
     "express-mysql-session": "^3.0.3",

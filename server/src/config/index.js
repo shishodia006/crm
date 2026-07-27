@@ -2,12 +2,11 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import dotenv from 'dotenv';
 
-
-// Explicitly load .env file from the server root directory
-dotenv.config({ path: path.resolve(__dirname, '../../.env') });
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-// .env is loaded via node --env-file=.env flag in package.json scripts
+
+// dotenv config ab __dirname ke NICHE aayega
+dotenv.config({ path: path.resolve(__dirname, '../../.env') });
 
 export const config = {
   appName: process.env.APP_NAME || 'Dot Domino CRM',
