@@ -123,29 +123,20 @@ function GoogleSheetsCard({ form, set, saving, save, toast }) {
 
   return (
     <Card icon="file-earmark-spreadsheet-fill" title="Google Sheets" badge={connectedEmail ? 'Connected' : undefined}>
-        <Field label="OAuth Client ID" name="google_sheets_oauth_client_id" value={form.google_sheets_oauth_client_id} onChange={set}
-          hint="From a Google Cloud Console OAuth 2.0 Client ID (Web application type)." />
-        <Field label="OAuth Client Secret" name="google_sheets_oauth_client_secret" type="password" value={form.google_sheets_oauth_client_secret} onChange={set} />
-        <Field label="Authorized redirect URI (add this in Google Cloud Console)" name="_gs_redirect"
-          value={`${FRONTEND_URL}/oauth/google_sheets/callback`} readOnly />
         <div className="d-flex align-items-center gap-2 mb-3 flex-wrap">
-          <SaveBtn saving={saving} label="Save Google Credentials"
-            onClick={() => save(['google_sheets_oauth_client_id', 'google_sheets_oauth_client_secret'])} />
-          {form.google_sheets_oauth_client_id && (
-            connectedEmail ? (
-              <>
-                <span className="badge badge-crm badge-live d-inline-flex align-items-center gap-1">
-                  <i className="bi bi-check-circle-fill" />{connectedEmail}
-                </span>
-                <button type="button" className="btn btn-outline-danger btn-sm" onClick={disconnect} disabled={disconnecting}>
-                  {disconnecting ? 'Disconnecting…' : 'Disconnect'}
-                </button>
-              </>
-            ) : (
-              <a href="/oauth/google_sheets" className="btn btn-outline-secondary btn-sm d-flex align-items-center gap-1">
-                <i className="bi bi-google" />Connect with Google
-              </a>
-            )
+          {connectedEmail ? (
+            <>
+              <span className="badge badge-crm badge-live d-inline-flex align-items-center gap-1">
+                <i className="bi bi-check-circle-fill" />{connectedEmail}
+              </span>
+              <button type="button" className="btn btn-outline-danger btn-sm" onClick={disconnect} disabled={disconnecting}>
+                {disconnecting ? 'Disconnecting…' : 'Disconnect'}
+              </button>
+            </>
+          ) : (
+            <a href="/oauth/google_sheets" className="btn btn-outline-secondary btn-sm d-flex align-items-center gap-1">
+              <i className="bi bi-google" />Connect with Google
+            </a>
           )}
         </div>
 

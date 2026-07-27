@@ -1,6 +1,7 @@
 import { one, run } from '../db/pool.js';
 import { getSetting, saveCompanySetting } from './settings.service.js';
 import { normalizeImportRow, processLead } from './lead.service.js';
+import { config } from '../config/index.js';
 
 // Google Sheets credentials/tokens are company-scoped (saveCompanySetting), unlike
 // the pre-existing Gmail/Outlook OAuth code which reads/writes the global `settings`
@@ -15,8 +16,8 @@ async function refreshAccessTokenIfNeeded(companyId) {
   if (!refreshToken) return null;
 
   const body = new URLSearchParams({
-    client_id: await getSetting('google_sheets_oauth_client_id', '', companyId),
-    client_secret: await getSetting('google_sheets_oauth_client_secret', '', companyId),
+    client_id: config.googleSheets.clientId,
+    client_secret: config.googleSheets.clientSecret,
     refresh_token: refreshToken,
     grant_type: 'refresh_token',
   });

@@ -259,12 +259,11 @@ export async function oauthStart(req, res) {
       response_mode: 'query', state: req.session.oauth_state
     })}`;
   } else if (provider === 'google_sheets') {
-    // Google Sheets credentials are per-company (set via the Lead Sources API
-    // settings tab, saved with saveCompanySetting) — unlike gmail/outlook above,
-    // which read/write the global `settings` table, so these lookups must pass
-    // req.companyId or they'll never find a value saved through that UI.
+    // Client ID/secret are one fixed Google Cloud OAuth app for the whole
+    // deployment (config/env, not per-company) — every company connects
+    // through the same app, only the resulting tokens are per-company.
     redirectUrl = `https://accounts.google.com/o/oauth2/v2/auth?${new URLSearchParams({
-      client_id: await getSetting('google_sheets_oauth_client_id', '', req.companyId),
+      client_id: config.googleSheets.clientId,
       redirect_uri: `${config.appUrl}/oauth/google_sheets/callback`,
       response_type: 'code', scope: 'https://www.googleapis.com/auth/spreadsheets.readonly email profile',
       access_type: 'offline', prompt: 'consent', state: req.session.oauth_state
@@ -331,8 +330,8 @@ export async function oauthCallback(req, res) {
       await saveSetting('email_provider', 'outlook_oauth', 'email');
     } else if (provider === 'google_sheets') {
       const body = new URLSearchParams({
-        client_id: await getSetting('google_sheets_oauth_client_id', '', req.companyId),
-        client_secret: await getSetting('google_sheets_oauth_client_secret', '', req.companyId),
+        client_id: config.googleSheets.clientId,
+        client_secret: config.googleSheets.clientSecret,
         redirect_uri: `${config.appUrl}/oauth/google_sheets/callback`, code, grant_type: 'authorization_code'
       });
       const response = await fetch('https://oauth2.googleapis.com/token', { method: 'POST', body });

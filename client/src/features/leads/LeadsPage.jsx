@@ -99,7 +99,7 @@ export default function LeadsPage() {
       <span className={`badge text-bg-${scoreClass(r.score)} badge-crm`}>{r.score ?? 0}</span>
     )},
     { label: 'Added', render: (r) => <span className="text-12 text-muted-2">{formatDate(r.created_at)}</span> },
-    { label: 'Email Activity', render: (r) => {
+    { label: 'Email', render: (r) => {
       const sent    = Number(r.email_sent    || 0);
       const opened  = Number(r.email_opened  || 0);
       const clicked = Number(r.email_clicked || 0);

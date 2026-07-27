@@ -32,6 +32,10 @@ export const config = {
       sender: process.env.SMS_MSHASTRA_SENDER || ''
     }
   },
+  googleSheets: {
+    clientId: process.env.GOOGLE_SHEETS_OAUTH_CLIENT_ID || '',
+    clientSecret: process.env.GOOGLE_SHEETS_OAUTH_CLIENT_SECRET || '',
+  },
   uploadPath: process.env.UPLOAD_PATH
     ? path.resolve(__dirname, '../..', process.env.UPLOAD_PATH)
     : path.resolve(__dirname, '../../../uploads'),
