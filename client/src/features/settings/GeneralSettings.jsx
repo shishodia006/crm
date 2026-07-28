@@ -23,15 +23,44 @@ const AI_FIELDS = [
   { name: 'ai_model', label: 'Model', placeholder: 'e.g. gpt-4o-mini' },
 ];
 
+// One-click presets: picking a provider fills in its OpenAI-compatible endpoint
+// (Gemini/Groq both offer one) so nobody has to hand-type or guess the URL —
+// only the API key and a model choice are actually provider-specific.
+const AI_PROVIDER_PRESETS = [
+  { key: 'custom', label: 'Custom / Other (OpenAI-compatible)', url: '', models: [] },
+  { key: 'openai', label: 'OpenAI', url: 'https://api.openai.com/v1/chat/completions', models: ['gpt-4o-mini', 'gpt-4o', 'gpt-4.1-mini'] },
+  { key: 'gemini', label: 'Google Gemini', url: 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions', models: ['gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-1.5-pro'] },
+  { key: 'groq', label: 'Groq', url: 'https://api.groq.com/openai/v1/chat/completions', models: ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant'] },
+];
+
+function detectAiProvider(url) {
+  if (!url) return 'custom';
+  if (url.includes('googleapis.com')) return 'gemini';
+  if (url.includes('groq.com')) return 'groq';
+  if (url.includes('api.openai.com')) return 'openai';
+  return 'custom';
+}
+
 export default function GeneralSettings() {
   const toast = useToast();
   const [form, setForm] = useState({});
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [aiProvider, setAiProvider] = useState('custom');
 
   useEffect(() => {
-    api.get('/api/settings').then((d) => setForm(d.settings ?? {})).finally(() => setLoading(false));
+    api.get('/api/settings').then((d) => {
+      const settings = d.settings ?? {};
+      setForm(settings);
+      setAiProvider(detectAiProvider(settings.ai_api_url));
+    }).finally(() => setLoading(false));
   }, []);
+
+  const handleProviderChange = (key) => {
+    setAiProvider(key);
+    const preset = AI_PROVIDER_PRESETS.find((p) => p.key === key);
+    if (preset && preset.url) setForm((p) => ({ ...p, ai_api_url: preset.url }));
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -88,28 +117,56 @@ export default function GeneralSettings() {
           </div>
 
           <h6 className="fw-semibold mt-4 mb-1">AI Provider (My Analyst)</h6>
-          <p className="text-muted text-12 mb-3">An OpenAI-compatible chat-completions endpoint. Powers the My Analyst chat and AI Agents.</p>
+          <p className="text-muted text-12 mb-3">Pick a provider — the endpoint URL fills in automatically. Powers the My Analyst chat and AI Agents.</p>
           <div className="row g-3">
-            {AI_FIELDS.map((f) => (
-              <div key={f.name} className="col-md-6">
-                <label className="form-label">{f.label}</label>
-                {f.type === 'password' ? (
-                  <PasswordInput
-                    value={form[f.name] ?? ''}
-                    placeholder={f.placeholder}
-                    onChange={(e) => setForm((p) => ({ ...p, [f.name]: e.target.value }))}
-                  />
-                ) : (
-                  <input
-                    type={f.type || 'text'}
-                    className="form-control"
-                    value={form[f.name] ?? ''}
-                    placeholder={f.placeholder}
-                    onChange={(e) => setForm((p) => ({ ...p, [f.name]: e.target.value }))}
-                  />
-                )}
-              </div>
-            ))}
+            <div className="col-md-6">
+              <label className="form-label">Provider</label>
+              <select className="form-select" value={aiProvider} onChange={(e) => handleProviderChange(e.target.value)}>
+                {AI_PROVIDER_PRESETS.map((p) => <option key={p.key} value={p.key}>{p.label}</option>)}
+              </select>
+            </div>
+            {AI_FIELDS.map((f) => {
+              const isUrl = f.name === 'ai_api_url';
+              const isModel = f.name === 'ai_model';
+              const preset = AI_PROVIDER_PRESETS.find((p) => p.key === aiProvider);
+              const urlLocked = isUrl && aiProvider !== 'custom';
+              return (
+                <div key={f.name} className="col-md-6">
+                  <label className="form-label">{f.label}</label>
+                  {f.type === 'password' ? (
+                    <PasswordInput
+                      value={form[f.name] ?? ''}
+                      placeholder={f.placeholder}
+                      onChange={(e) => setForm((p) => ({ ...p, [f.name]: e.target.value }))}
+                    />
+                  ) : (
+                    <input
+                      type={f.type || 'text'}
+                      className="form-control"
+                      value={form[f.name] ?? ''}
+                      placeholder={f.placeholder}
+                      readOnly={urlLocked}
+                      onChange={(e) => setForm((p) => ({ ...p, [f.name]: e.target.value }))}
+                    />
+                  )}
+                  {urlLocked && <div className="text-11 text-muted-3 mt-1">Auto-filled for {preset.label} — switch to "Custom" to edit.</div>}
+                  {isModel && preset?.models?.length > 0 && (
+                    <div className="d-flex flex-wrap gap-1 mt-2">
+                      {preset.models.map((m) => (
+                        <button
+                          type="button"
+                          key={m}
+                          className={`btn btn-sm rounded-crm-xs text-11 ${form.ai_model === m ? 'btn-crm' : 'btn-outline-secondary'}`}
+                          onClick={() => setForm((p) => ({ ...p, ai_model: m }))}
+                        >
+                          {m}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
 
           <div className="mt-4">

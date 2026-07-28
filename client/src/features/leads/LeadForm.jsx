@@ -7,7 +7,7 @@ import LoadingBox from '../../components/common/LoadingBox.jsx';
 const BLANK = {
   name: '', email: '', mobile: '', company: '', designation: '',
   industry: '', city: '', state: '', country: 'India',
-  product_interest: '', source_id: '', status: 'new'
+  product_interest: '', source_id: '', status: 'new', lead_type: ''
 };
 
 export default function LeadForm() {
@@ -129,6 +129,14 @@ export default function LeadForm() {
                 <label className="form-label">Status</label>
                 <select name="status" value={form.status} onChange={handleChange} className="form-select">
                   {['new','contacted','qualified','proposal','negotiation','won','lost','unsubscribed','invalid'].map((s) => <option key={s} value={s}>{s}</option>)}
+                </select>
+              </div>
+              <div className="col-md-6">
+                <label className="form-label">Type of Lead</label>
+                <select name="lead_type" value={form.lead_type ?? ''} onChange={handleChange} className="form-select">
+                  <option value="">— Not set —</option>
+                  <option value="direct_client">Direct Client</option>
+                  <option value="partner_client">Partner Client</option>
                 </select>
               </div>
               <div className="col-12">

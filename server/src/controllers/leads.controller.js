@@ -76,7 +76,7 @@ export async function show(req, res) {
 }
 
 export async function update(req, res) {
-  const allowed = ['name','email','mobile','company','designation','industry','city','state','country','product_interest','status','assigned_to','source_id','notes'];
+  const allowed = ['name','email','mobile','company','designation','industry','city','state','country','product_interest','status','category','lead_type','assigned_to','source_id','notes'];
   const data = {};
   for (const field of allowed) {
     if (req.body[field] !== undefined) data[field] = req.body[field] === '' ? null : req.body[field];

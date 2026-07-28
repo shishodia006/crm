@@ -75,6 +75,7 @@ export async function runAutoMigrations() {
     await ensureColumn('campaigns', 'sent_count', '`sent_count` INT UNSIGNED NOT NULL DEFAULT 0');
     await ensureColumn('users', 'timezone', '`timezone` VARCHAR(60) DEFAULT NULL');
     await ensureColumn('users', 'status', "`status` ENUM('invited','active') NOT NULL DEFAULT 'active'");
+    await ensureColumn('leads', 'lead_type', "`lead_type` ENUM('direct_client','partner_client') DEFAULT NULL");
 
     // Backfill so pre-existing rows aren't invisible to company_id filters
     const [company] = await q('SELECT id FROM companies ORDER BY id ASC LIMIT 1');
@@ -120,6 +121,18 @@ export async function runAutoMigrations() {
     // 005_conversation_rcs_channel (MODIFY COLUMN is always safe to re-run, no guard needed)
     await pool.query("ALTER TABLE `conversations` MODIFY COLUMN `channel` ENUM('email','whatsapp','sms','call','rcs') NOT NULL DEFAULT 'email'");
     await pool.query("ALTER TABLE `conversation_messages` MODIFY COLUMN `channel` ENUM('email','whatsapp','sms','call','rcs') NOT NULL");
+
+    // workflow_steps.type ENUM never grew to cover step types added after the
+    // original 11 (multi_send, tag_lead, and the short-form aliases the Simple
+    // Builder saves — email/whatsapp/rcs/sms/task) — saving a Tag/Multi-Send
+    // step (or any step using a short alias) hit "Data truncated for column
+    // 'type'", surfaced to the user as a generic save error.
+    await pool.query(`ALTER TABLE \`workflow_steps\` MODIFY COLUMN \`type\` ENUM(
+      'email','whatsapp','rcs','sms',
+      'send_email','send_whatsapp','send_rcs','send_sms','multi_send',
+      'wait','condition','assign_agent','task','create_task',
+      'update_score','move_pipeline','tag_lead','exit'
+    ) NOT NULL`);
 
     // 006_email_module
     await ensureColumn('templates', 'design_json', '`design_json` JSON DEFAULT NULL');

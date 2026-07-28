@@ -90,6 +90,17 @@ export default function LeadsPage() {
     return next;
   });
 
+  const updateLeadField = async (leadId, field, value) => {
+    try {
+      await api.patch(`/api/leads/${leadId}`, { [field]: value });
+      toast(`${field === 'category' ? 'Category' : 'Status'} updated.`, 'success');
+      reload();
+    } catch (err) {
+      toast(err.message || 'Update failed.', 'danger');
+      reload();
+    }
+  };
+
   const handleBulkEnroll = async () => {
     if (!enrollCampaignId || selectedIds.size === 0) return;
     setEnrolling(true);
@@ -129,14 +140,36 @@ export default function LeadsPage() {
         ? <span className="badge badge-source badge-crm">{r.source_name}</span>
         : <span className="text-muted">—</span>
     },
+    { label: 'Type', render: (r) => r.lead_type
+        ? <span className={`badge badge-${r.lead_type === 'direct_client' ? 'direct-client' : 'partner-client'} badge-crm`}>
+            {r.lead_type === 'direct_client' ? 'Direct Client' : 'Partner Client'}
+          </span>
+        : <span className="text-muted">—</span>
+    },
     { label: 'Category', render: (r) => {
-      const cat = r.category?.toLowerCase().replace(' ', '_');
-      return cat
-        ? <span className={`badge badge-${cat === 'sales_ready' ? 'sales-ready' : cat} badge-crm text-capitalize`}>{r.category}</span>
-        : <span className="text-muted">—</span>;
+      const cat = r.category?.toLowerCase().replace(' ', '_') || 'cold';
+      return (
+        <select
+          className={`crm-inline-badge-select badge-${cat === 'sales_ready' ? 'sales-ready' : cat}`}
+          value={cat}
+          title="Click to change category"
+          onClick={(e) => e.stopPropagation()}
+          onChange={(e) => { e.stopPropagation(); updateLeadField(r.id, 'category', e.target.value); }}
+        >
+          {CATEGORY_OPTS.filter((o) => o.value).map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+        </select>
+      );
     }},
     { label: 'Status', render: (r) => (
-      <span className={`badge badge-${r.status} badge-crm text-capitalize`}>{r.status}</span>
+      <select
+        className={`crm-inline-badge-select badge-${r.status}`}
+        value={r.status}
+        title="Click to change status"
+        onClick={(e) => e.stopPropagation()}
+        onChange={(e) => { e.stopPropagation(); updateLeadField(r.id, 'status', e.target.value); }}
+      >
+        {STATUS_OPTS.filter((o) => o.value).map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+      </select>
     )},
     { label: 'Score', render: (r) => (
       <span className={`badge text-bg-${scoreClass(r.score)} badge-crm`}>{r.score ?? 0}</span>

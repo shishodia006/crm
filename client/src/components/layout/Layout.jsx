@@ -191,7 +191,6 @@ function NotificationBell() {
       </button>
       {open && (
         <div className="crm-bell-dropdown shadow-sm">
-          <div className="crm-bell-dropdown-title">Notifications</div>
           {data.items.length === 0 ? (
             <div className="text-muted text-12 text-center py-4">No notifications yet.</div>
           ) : (

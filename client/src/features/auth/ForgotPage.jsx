@@ -29,26 +29,33 @@ export default function ForgotPage() {
           <h5 className="fw-bold mb-1">Forgot password</h5>
           <p className="text-muted small mb-4">Enter your email and we'll send a reset link.</p>
           {sent ? (
-            <div className="alert alert-success">
+            <div className="alert alert-success crm-pop-in d-flex align-items-center gap-2">
+              <i className="bi bi-check-circle-fill fs-5" />
               Check your inbox for the reset link.
             </div>
           ) : (
             <>
-              {error && <div className="alert alert-danger py-2">{error}</div>}
+              {error && <div className="alert alert-danger py-2 crm-pop-in">{error}</div>}
               <form onSubmit={handleSubmit}>
                 <div className="mb-3">
                   <label className="form-label">Email address</label>
-                  <input
-                    type="email"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    className="form-control"
-                    required
-                    autoFocus
-                  />
+                  <div className="crm-input-icon-wrap">
+                    <i className="bi bi-envelope crm-input-icon" />
+                    <input
+                      type="email"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      className="form-control ps-5"
+                      required
+                      autoFocus
+                    />
+                  </div>
                 </div>
                 <button className="btn-crm w-100 justify-content-center" disabled={loading}>
-                  {loading ? 'Sending…' : 'Send reset link'}
+                  {loading
+                    ? <><span className="spinner-border spinner-border-sm" />Sending…</>
+                    : <><i className="bi bi-send-fill" />Send reset link</>
+                  }
                 </button>
               </form>
             </>
