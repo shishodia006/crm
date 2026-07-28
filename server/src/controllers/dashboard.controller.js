@@ -1,6 +1,6 @@
 import { q, one, scalar } from '../db/pool.js';
 import { ok } from '../utils/response.js';
-import { companiesForUser } from '../services/company.service.js';
+import { allActiveCompanies } from '../services/company.service.js';
 import {
   pipelineSnapshot, businessHealth, actionRequired, leadSourceTrends,
   monthlyGoals, dripSequences, liveActivity
@@ -128,7 +128,7 @@ export async function dailyStats(req, res) {
 }
 
 export async function master(req, res) {
-  const companies = await companiesForUser(req.user);
+  const companies = await allActiveCompanies();
   const ids = companies.map((company) => Number(company.id)).filter(Boolean);
   if (!ids.length) return ok(res, { stats: {}, companies: [], dailyLeads: [] });
   const marks = ids.map(() => '?').join(',');

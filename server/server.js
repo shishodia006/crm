@@ -113,5 +113,5 @@ function startDripScheduler() {
   };
 
   setInterval(tick, INTERVAL_MS);
-  console.log('[drip] Scheduler started — runs every 1 minute automatically');
+  console.log('[drip] Scheduler started — runs  automatically');
 }

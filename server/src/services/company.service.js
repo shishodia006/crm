@@ -6,22 +6,28 @@ export function slugifyCompanyName(name) {
     .slice(0, 140);
 }
 
+// A user's global `role` ('admin'/'superadmin' vs 'agent'/'manager') is about what
+// they're allowed to DO within a company they belong to — it is not a platform-wide
+// "see every tenant" grant. Membership (company_users) is what scopes which
+// companies show up here, for every role, so one account never sees another
+// account's workspace just because both happen to hold the 'admin' role.
 export async function companiesForUser(user) {
   if (!user) return [];
-  const isPlatformAdmin = ['admin', 'superadmin'].includes(user.role);
   return q(
-    isPlatformAdmin
-      ? 'SELECT c.*, cu.role AS company_role FROM companies c LEFT JOIN company_users cu ON cu.company_id=c.id AND cu.user_id=? WHERE c.is_active=1 ORDER BY c.name'
-      : 'SELECT c.*, cu.role AS company_role FROM companies c JOIN company_users cu ON cu.company_id=c.id WHERE cu.user_id=? AND c.is_active=1 ORDER BY c.name',
+    'SELECT c.*, cu.role AS company_role FROM companies c JOIN company_users cu ON cu.company_id=c.id WHERE cu.user_id=? AND c.is_active=1 ORDER BY c.name',
     [user.id]
   );
 }
 
+// Master Dashboard is a deliberate cross-tenant reporting tool (route already
+// gated to global admin/superadmin in app.routes.js) — unlike companiesForUser
+// above, this one intentionally ignores company_users membership.
+export async function allActiveCompanies() {
+  return q('SELECT * FROM companies WHERE is_active=1 ORDER BY name');
+}
+
 export async function canAccessCompany(user, companyId) {
   if (!user || !companyId) return false;
-  if (['admin', 'superadmin'].includes(user.role)) {
-    return Boolean(await one('SELECT id FROM companies WHERE id=? AND is_active=1 LIMIT 1', [companyId]));
-  }
   return Boolean(await one(
     'SELECT c.id FROM companies c JOIN company_users cu ON cu.company_id=c.id WHERE c.id=? AND c.is_active=1 AND cu.user_id=? LIMIT 1',
     [companyId, user.id]

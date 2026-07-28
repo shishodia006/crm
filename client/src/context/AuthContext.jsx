@@ -7,6 +7,7 @@ export function AuthProvider({ children }) {
   const [user, setUser] = useState(undefined); // undefined = loading
   const [company, setCompany] = useState(null);
   const [companies, setCompanies] = useState([]);
+  const [justLoggedIn, setJustLoggedIn] = useState(false);
 
   const fetchMe = useCallback(async () => {
     try {
@@ -28,6 +29,7 @@ export function AuthProvider({ children }) {
     setUser(data.user);
     setCompany(data.company ?? null);
     setCompanies(data.companies ?? []);
+    setJustLoggedIn(true);
     return data;
   };
 
@@ -51,7 +53,10 @@ export function AuthProvider({ children }) {
   };
 
   return (
-    <AuthContext.Provider value={{ user, company, companies, login, register, logout, switchCompany, reload: fetchMe }}>
+    <AuthContext.Provider value={{
+      user, company, companies, login, register, logout, switchCompany, reload: fetchMe,
+      justLoggedIn, clearJustLoggedIn: () => setJustLoggedIn(false),
+    }}>
       {children}
     </AuthContext.Provider>
   );
