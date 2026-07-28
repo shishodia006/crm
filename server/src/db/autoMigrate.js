@@ -1,4 +1,5 @@
 import { pool, q, run } from './pool.js';
+import { isSensitive } from '../services/settings.service.js';
 
 // Runs once at server startup and brings the DB schema up to date with
 // database/migrations/001..008, without relying on "ADD COLUMN IF NOT EXISTS"
@@ -88,6 +89,29 @@ export async function runAutoMigrations() {
       'INSERT IGNORE INTO company_users (company_id, user_id) SELECT ?, id FROM users WHERE is_active=1',
       [defaultCompanyId]
     );
+
+    // SECURITY: credentials (API keys/passwords/tokens) that predate multi-tenancy
+    // were saved to the global `settings` table — getSetting()/companySettings()
+    // used to fall back to that table for ANY company with no override of its own,
+    // meaning every newly-created company saw the original admin's live credentials.
+    // One-time move: copy each sensitive global row into the original (oldest)
+    // company's own company_settings if it doesn't already have that key, then
+    // delete it from the global table so it can never leak to another company
+    // again. Already-migrated installs have nothing left here — this becomes a
+    // fast no-op query on every subsequent boot.
+    const sensitiveGlobalRows = await q('SELECT `key`,`value`,`group` FROM settings');
+    for (const row of sensitiveGlobalRows) {
+      if (!isSensitive(row.key)) continue;
+      const [existing] = await q('SELECT 1 FROM company_settings WHERE company_id=? AND `key`=? LIMIT 1', [defaultCompanyId, row.key]);
+      if (!existing) {
+        await run(
+          'INSERT INTO company_settings (company_id,`key`,`value`,`group`) VALUES (?,?,?,?)',
+          [defaultCompanyId, row.key, row.value, row.group]
+        );
+        console.log(`[auto-migrate] moved credential ${row.key} from global settings to company #${defaultCompanyId}`);
+      }
+      await run('DELETE FROM settings WHERE `key`=?', [row.key]);
+    }
 
     // 002_integration_routing
     await ensureColumn('communications', 'integration_account_id', '`integration_account_id` INT UNSIGNED DEFAULT NULL', 'idx_communications_integration_account', 'ADD INDEX `idx_communications_integration_account` (`integration_account_id`)');

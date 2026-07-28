@@ -5,12 +5,16 @@ import { encryptValue, decryptValue } from '../utils/crypto.js';
 // Matches setting keys that hold a live credential (passwords, API keys/secrets/tokens)
 // so they're encrypted at rest rather than stored as plaintext.
 const SENSITIVE_KEY_PATTERN = /(_pass|_pwd|_key|_secret|_token)$/i;
-const isSensitive = (key) => SENSITIVE_KEY_PATTERN.test(key);
+export const isSensitive = (key) => SENSITIVE_KEY_PATTERN.test(key);
 
 export async function getSetting(key, fallback = '', companyId = null) {
   if (companyId) {
     const companyValue = await scalar('SELECT `value` FROM company_settings WHERE company_id=? AND `key`=? LIMIT 1', [companyId, key]);
     if (companyValue != null && companyValue !== '') return isSensitive(key) ? decryptValue(String(companyValue)) : String(companyValue);
+    // Credentials are strictly per-company — never fall back to another
+    // company's (or a pre-multi-tenancy install's) global secret. A company
+    // that hasn't configured its own key/password/token yet has none, full stop.
+    if (isSensitive(key)) return fallback;
   }
   const value = await scalar('SELECT `value` FROM settings WHERE `key`=? LIMIT 1', [key]);
   if (value == null || value === '') return fallback;
@@ -73,7 +77,10 @@ export async function companySettings(companyId, groups = []) {
     ? `SELECT \`key\`,\`value\`,\`group\` FROM company_settings WHERE company_id=? AND \`group\` IN (${groups.map(() => '?').join(',')})`
     : 'SELECT `key`,`value`,`group` FROM company_settings WHERE company_id=?', [companyId, ...groups]);
   const decryptRow = (row) => (isSensitive(row.key) ? { ...row, value: decryptValue(row.value) } : row);
-  const decryptedGlobal = globalRows.map(decryptRow);
+  // Credentials never come from the shared/global row set — only that company's
+  // own company_settings. Global rows only ever seed non-sensitive defaults
+  // (e.g. a default SMS gateway URL template), same as getSetting() above.
+  const decryptedGlobal = globalRows.filter((row) => !isSensitive(row.key)).map(decryptRow);
   const decryptedLocal = localRows.map(decryptRow);
   const values = Object.fromEntries(decryptedGlobal.map((row) => [row.key, row.value]));
   for (const row of decryptedLocal) values[row.key] = row.value;
