@@ -110,7 +110,7 @@ export async function processDue(batchSize = config.dripBatchSize) {
       stats.processed += 1;
     } catch (error) {
       stats.errors += 1;
-      console.error(`DripEngine error enrollment #${enrollment.enrollment_id}:`, error.message);
+      console.error(`DripEngine error enrollment #${enrollment.enrollment_id}:`, error.stack || error.message);
     }
   }
   return stats;

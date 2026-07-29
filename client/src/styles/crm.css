@@ -259,7 +259,7 @@
 .crm-pass-eye:hover { color: #6b7280; }
 
 /* ── Search bar ────────────────────────────────────────── */
-.crm-search-wrap { position: relative; width: 280px; }
+.crm-search-wrap { position: relative; width: 200px; }
 .crm-search-icon {
   position: absolute; left: 11px; top: 50%;
   transform: translateY(-50%);

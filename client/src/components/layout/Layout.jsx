@@ -143,6 +143,48 @@ function LeadSearch() {
   );
 }
 
+/* ── Fullscreen toggle ──────────────────────────────────── */
+function FullscreenToggle() {
+  const [isFullscreen, setIsFullscreen] = useState(Boolean(document.fullscreenElement));
+
+  useEffect(() => {
+    const onChange = () => setIsFullscreen(Boolean(document.fullscreenElement));
+    document.addEventListener('fullscreenchange', onChange);
+    return () => document.removeEventListener('fullscreenchange', onChange);
+  }, []);
+
+  const toggle = async () => {
+    try {
+      if (document.fullscreenElement) {
+        await document.exitFullscreen();
+      } else {
+        await document.documentElement.requestFullscreen();
+      }
+    } catch { /* some browsers block this without a direct user gesture — button click already is one */ }
+  };
+
+  return (
+    <button
+      type="button"
+      className="crm-bell-btn"
+      onClick={toggle}
+      title={isFullscreen ? 'Exit full screen' : 'Full screen'}
+    >
+      <svg
+        width="20" height="20" viewBox="0 0 24 24" strokeWidth="1.5" stroke="currentColor"
+        fill="none" strokeLinecap="round" strokeLinejoin="round"
+        style={{ transform: isFullscreen ? 'none' : 'rotate(180deg)' }}
+      >
+        <path stroke="none" d="M0 0h24v24H0z" fill="none" />
+        <path d="M15 19v-2a2 2 0 0 1 2 -2h2" />
+        <path d="M15 5v2a2 2 0 0 0 2 2h2" />
+        <path d="M5 15h2a2 2 0 0 1 2 2v2" />
+        <path d="M5 9h2a2 2 0 0 0 2 -2v-2" />
+      </svg>
+    </button>
+  );
+}
+
 /* ── Notification bell ─────────────────────────────────── */
 function NotificationBell() {
   const navigate = useNavigate();
@@ -496,6 +538,8 @@ export default function Layout() {
 
           <LeadSearch />
 
+          <FullscreenToggle />
+
           {!pageTabs && (
             <button className="btn-crm" onClick={() => setDrawerOpen(true)}>
               <i className="bi bi-plus-lg" />New Lead
@@ -507,7 +551,6 @@ export default function Layout() {
           <div className="dropdown">
             <button className="btn btn-link text-dark text-decoration-none d-flex align-items-center gap-2 p-0" data-bs-toggle="dropdown">
               <span className="crm-topbar-avatar">{initials(user?.name)}</span>
-              <i className="bi bi-chevron-down text-10 text-silver" />
             </button>
             <ul className="dropdown-menu dropdown-menu-end shadow-sm crm-user-menu">
               <li>
