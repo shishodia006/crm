@@ -165,7 +165,7 @@ function NotificationBell() {
 
   useEffect(() => {
     load();
-    const iv = setInterval(load, 15000);
+    const iv = setInterval(load, 8000);
     return () => clearInterval(iv);
   }, [load]);
 
@@ -183,9 +183,23 @@ function NotificationBell() {
     if (n.link) navigate(n.link);
   };
 
+  // Opening the bell clears the unread badge, same as Gmail/Facebook — you've
+  // seen the list, no need to click each one. It stays clear until a genuinely
+  // new notification arrives (prevUnreadRef resets to 0 so the next increase
+  // still dings).
+  const toggleOpen = async () => {
+    setOpen((v) => !v);
+    if (open || data.unread === 0) return;
+    try {
+      await api.post('/api/notifications/read-all', {});
+      setData((d) => ({ ...d, unread: 0, items: d.items.map((n) => ({ ...n, is_read: true })) }));
+      prevUnreadRef.current = 0;
+    } catch { /* non-critical — badge will just re-sync on next poll */ }
+  };
+
   return (
     <div className="position-relative" ref={wrapRef}>
-      <button className="crm-bell-btn" onClick={() => setOpen((v) => !v)}>
+      <button className="crm-bell-btn" onClick={toggleOpen}>
         <i className="bi bi-bell" />
         {data.unread > 0 && <span className="crm-bell-badge">{data.unread > 9 ? '9+' : data.unread}</span>}
       </button>

@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useResource } from '../../hooks/useResource.js';
 import LoadingBox from '../../components/common/LoadingBox.jsx';
 import Table from '../../components/common/Table.jsx';
-import { formatDate, scoreClass } from '../../utils/formatters.js';
+import { formatDateTime, scoreClass } from '../../utils/formatters.js';
 import { api } from '../../services/api.js';
 import { useToast } from '../../hooks/useToast.js';
 
@@ -174,7 +174,7 @@ export default function LeadsPage() {
     { label: 'Score', render: (r) => (
       <span className={`badge text-bg-${scoreClass(r.score)} badge-crm`}>{r.score ?? 0}</span>
     )},
-    { label: 'Added', render: (r) => <span className="text-12 text-muted-2">{formatDate(r.created_at)}</span> },
+    { label: 'Added', render: (r) => <span className="text-12 text-muted-2 text-nowrap">{formatDateTime(r.created_at)}</span> },
     { label: 'Email', render: (r) => {
       const sent    = Number(r.email_sent    || 0);
       const opened  = Number(r.email_opened  || 0);

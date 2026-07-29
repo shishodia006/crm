@@ -207,8 +207,6 @@ function ShopifyCard({ form, set, saving, save, toast }) {
         hint="Shopify Admin → Settings → Apps and sales channels → Develop apps → Create an app → grant read_customers + read_orders → Install → copy the Admin API access token." />
       <Field label="API Secret Key" name="shopify_api_secret" type="password" value={form.shopify_api_secret} onChange={set}
         hint="From the same Custom App's API credentials tab — used to verify incoming webhooks are really from Shopify." />
-      <Field label="Public Webhook Base URL" name="shopify_webhook_base_url" value={form.shopify_webhook_base_url} onChange={set}
-        hint="Your backend's public address (e.g. https://yourdomain.com, or an ngrok/tunnel URL in dev) — Shopify's servers call this directly, not your browser. Leave blank to skip auto webhook registration and rely on Sync Now only." />
 
       <div className="d-flex align-items-center gap-2 mb-3 flex-wrap">
         <SaveBtn saving={saving} label="Save Shopify Credentials"
@@ -293,8 +291,6 @@ function HubspotCard({ form, set, saving, save, toast }) {
         hint="HubSpot → Settings → Integrations → Private Apps → Create a private app → grant crm.objects.contacts.read (and .write if you want two-way later) → copy the Access Token." />
       <Field label="Webhook Signing Secret" name="hubspot_webhook_secret" type="password" value={form.hubspot_webhook_secret} onChange={set}
         hint="From the same Private App's Webhooks tab — only needed for real-time sync (optional, Sync Now always works without it)." />
-      <Field label="Public Webhook Base URL" name="hubspot_webhook_base_url" value={form.hubspot_webhook_base_url} onChange={set}
-        hint="Your backend's public address (e.g. https://yourdomain.com, or an ngrok/tunnel URL in dev). Leave blank to rely on Sync Now only." />
 
       <div className="d-flex align-items-center gap-2 mb-3 flex-wrap">
         <SaveBtn saving={saving} label="Save HubSpot Credentials"
@@ -438,8 +434,6 @@ function MailchimpCard({ form, set, saving, save, toast }) {
         hint="Mailchimp → Profile → Extras → API Keys → Create A Key. The data center (e.g. us21) is read automatically from the end of the key." />
       <Field label="Audience/List ID" name="mailchimp_list_id" value={form.mailchimp_list_id} onChange={set}
         hint="Audience → Settings → Audience name and defaults → Audience ID." />
-      <Field label="Public Webhook Base URL" name="mailchimp_webhook_base_url" value={form.mailchimp_webhook_base_url} onChange={set}
-        hint="Your backend's public address (e.g. https://yourdomain.com, or an ngrok/tunnel URL in dev). Leave blank to rely on Sync Now only." />
 
       <div className="d-flex align-items-center gap-2 mb-3 flex-wrap">
         <SaveBtn saving={saving} label="Save Mailchimp Credentials"
@@ -525,8 +519,6 @@ function ZendeskCard({ form, set, saving, save, toast }) {
       <Field label="Agent/Admin Email" name="zendesk_email" value={form.zendesk_email} onChange={set} />
       <Field label="API Token" name="zendesk_api_token" type="password" value={form.zendesk_api_token} onChange={set}
         hint="Zendesk Admin Center → Apps and integrations → APIs → Zendesk API → Add API token." />
-      <Field label="Public Webhook Base URL" name="zendesk_webhook_base_url" value={form.zendesk_webhook_base_url} onChange={set}
-        hint="Your backend's public address (e.g. https://yourdomain.com, or an ngrok/tunnel URL in dev). Leave blank to skip auto-registering the ticket-sync webhook + trigger and rely on Sync Now only." />
 
       <div className="d-flex align-items-center gap-2 mb-3 flex-wrap">
         <SaveBtn saving={saving} label="Save Zendesk Credentials"
