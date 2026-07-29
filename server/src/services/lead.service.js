@@ -224,7 +224,10 @@ export async function leadTimeline(leadId) {
 }
 
 export async function listLeads(filters = {}, page = 1, perPage = config.perPage, companyId = null) {
-  const where = ['1=1'];
+  // is_duplicate=1 rows are a re-sync/re-import hitting the same contact within
+  // the dedup window (processLead) — they're logged for traceability but aren't
+  // separate leads, so the main list shouldn't show the same person twice.
+  const where = ['1=1', 'l.is_duplicate = 0'];
   const params = [];
   if (companyId) { where.push('l.company_id = ?'); params.push(Number(companyId)); }
   if (filters.search) {

@@ -129,7 +129,7 @@ export async function dealsShow(req, res) {
     q('SELECT a.*, u.name AS user_name FROM activities a LEFT JOIN users u ON u.id=a.user_id WHERE a.deal_id=? ORDER BY a.created_at DESC', [deal.id]),
     q('SELECT t.*, u.name AS assigned_name FROM tasks t LEFT JOIN users u ON u.id=t.assigned_to WHERE t.deal_id=? AND t.company_id=? AND t.done=0 ORDER BY t.due_at ASC', [deal.id, req.companyId]),
     q('SELECT * FROM pipeline_stages WHERE is_active=1 ORDER BY stage_order'),
-    q("SELECT id,name FROM users WHERE role IN ('agent','manager') AND is_active=1 ORDER BY name")
+    q("SELECT u.id,u.name FROM users u JOIN company_users cu ON cu.user_id=u.id WHERE cu.company_id=? AND u.role IN ('agent','manager') AND u.is_active=1 ORDER BY u.name", [req.companyId])
   ]);
   ok(res, { deal, activities, tasks, stages, agents });
 }

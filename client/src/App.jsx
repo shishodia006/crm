@@ -36,7 +36,6 @@ import SourcesSettings from './features/settings/SourcesSettings.jsx';
 import PipelineSettings from './features/settings/PipelineSettings.jsx';
 import AiAgentsSettings from './features/settings/AiAgentsSettings.jsx';
 import ChannelsPage from './features/settings/ChannelsPage.jsx';
-import ThirdPartyAppsPage from './features/settings/ThirdPartyAppsPage.jsx';
 import AnalystPage from './features/analyst/AnalystPage.jsx';
 import DatabasePage from './features/database/DatabasePage.jsx';
 import ProfileSettings from './features/settings/ProfileSettings.jsx';
@@ -117,7 +116,7 @@ export default function App() {
 
               {/* Standalone admin pages */}
               <Route path="/sources" element={<SourcesSettings />} />
-              <Route path="/integrations" element={<ThirdPartyAppsPage />} />
+              <Route path="/integrations" element={<IntegrationsSettings />} />
               <Route path="/channels" element={<ChannelsPage />} />
               <Route path="/users" element={<UsersSettings />} />
               <Route path="/ai-agents" element={<AiAgentsSettings />} />
@@ -130,7 +129,6 @@ export default function App() {
                 <Route path="team" element={<TeamSettings />} />
                 <Route path="general" element={<GeneralSettings />} />
                 <Route path="users" element={<UsersSettings />} />
-                <Route path="integrations" element={<IntegrationsSettings />} />
                 <Route path="pipeline" element={<PipelineSettings />} />
                 <Route path="billing" element={<BillingSettings />} />
               </Route>

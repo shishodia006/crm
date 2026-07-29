@@ -4,7 +4,6 @@ const TABS = [
   { to: "/settings/profile", label: "Profile", icon: "person" },
   { to: "/settings/team", label: "Team", icon: "people" },
   { to: "/settings/general", label: "General", icon: "sliders" },
-  { to: "/settings/integrations", label: "Integrations", icon: "plug" },
   { to: "/settings/pipeline", label: "Pipeline Stages", icon: "kanban" },
   { to: "/settings/billing", label: "Billing", icon: "credit-card" },
 ];

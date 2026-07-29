@@ -73,7 +73,7 @@ function TaskRow({ task, onDone, onDelete, onOpen, showAssignee }) {
 
   return (
     <div
-      className={`crm-task-row${clickable ? ' crm-clickable-row' : ''}`}
+      className={`crm-task-row${clickable ? ' crm-clickable-row' : ''}${overdue ? ' overdue' : ''}`}
       style={{ '--task-accent': accent }}
       onClick={() => clickable && onOpen(task)}
     >
@@ -95,6 +95,7 @@ function TaskRow({ task, onDone, onDelete, onOpen, showAssignee }) {
       </div>
 
       <div className={`crm-task-row-time flex-shrink-0 ${overdue ? 'text-danger fw-semibold' : isToday(task) ? 'icon-amber fw-semibold' : ''}`}>
+        {overdue && <span className="badge badge-crm badge-overdue me-1"><i className="bi bi-exclamation-triangle-fill" /> Overdue</span>}
         {task.done ? `Completed ${timeAgo(task.done_at)} ago` : dueLabel(task.due_at) || '—'}
       </div>
 

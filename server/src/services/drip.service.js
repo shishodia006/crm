@@ -197,7 +197,7 @@ export async function executeWorkflowStep(enrollment, depth = 0) {
     return;
 
   } else if (['assign_agent'].includes(step.type)) {
-    await assignAgentToLead(lead.id, step.action_data);
+    await assignAgentToLead(lead.id, step.action_data, lead.company_id);
   } else if (['create_task', 'task'].includes(step.type)) {
     await createWorkflowTask(lead.id, step.action_data);
   } else if (step.type === 'update_score') {
@@ -340,15 +340,20 @@ export async function advanceEnrollment(enrollmentId, nextStepId, result, depth 
   }
 }
 
-async function assignAgentToLead(leadId, actionDataJson) {
+async function assignAgentToLead(leadId, actionDataJson, companyId) {
   let data = {};
   try { data = JSON.parse(actionDataJson || '{}'); } catch { data = {}; }
   let agentId = data.agent_id;
   if (!agentId) {
+    // Round-robin to the least-loaded agent — must stay within this lead's own
+    // company, or a drip step could hand the lead to a different tenant's staff.
     const agent = await one(
-      `SELECT u.id FROM users u LEFT JOIN leads l ON l.assigned_to = u.id
-       WHERE u.role IN ('agent','manager') AND u.is_active=1
-       GROUP BY u.id ORDER BY COUNT(l.id) ASC LIMIT 1`
+      `SELECT u.id FROM users u
+       JOIN company_users cu ON cu.user_id = u.id
+       LEFT JOIN leads l ON l.assigned_to = u.id AND l.company_id = ?
+       WHERE cu.company_id = ? AND u.role IN ('agent','manager') AND u.is_active=1
+       GROUP BY u.id ORDER BY COUNT(l.id) ASC LIMIT 1`,
+      [companyId, companyId]
     );
     agentId = agent?.id;
   }

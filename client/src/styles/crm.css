@@ -1290,6 +1290,8 @@
 }
 .crm-task-row:hover { background: #fafbff; }
 .crm-task-row + .crm-task-row { margin-top: 2px; }
+.crm-task-row.overdue { background: #fef2f2; }
+.crm-task-row.overdue:hover { background: #fee2e2; }
 .crm-task-row-title { font-size: 13.5px; font-weight: 600; color: #1f2233; }
 .crm-task-row-title.done { text-decoration: line-through; color: #9ca3af; }
 .crm-task-row-sub { font-size: 11.5px; color: #6b7280; margin-top: 2px; }

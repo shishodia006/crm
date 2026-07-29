@@ -11,11 +11,14 @@ export async function index(req, res) {
   const userClause  = useAllScope ? '' : 'AND (t.assigned_to = ? OR t.assigned_to IS NULL)';
   const userParams  = useAllScope ? [] : [req.user.id];
 
+  // A task due earlier today isn't "overdue" yet — it only becomes overdue once
+  // its due date's calendar day has fully passed, matching the grace period the
+  // Tasks page UI already applies (isOverdue() in TasksPage.jsx).
   let statusClause;
-  if (status === 'overdue')        statusClause = 't.done = 0 AND t.due_at IS NOT NULL AND t.due_at < NOW()';
+  if (status === 'overdue')        statusClause = "t.done = 0 AND t.due_at IS NOT NULL AND DATE(t.due_at) < CURDATE()";
   else if (status === 'completed') statusClause = 't.done = 1';
   else if (status === 'open')      statusClause = 't.done = 0';
-  else                              statusClause = 't.done = 0 AND (t.due_at IS NULL OR t.due_at >= NOW())';
+  else                              statusClause = "t.done = 0 AND (t.due_at IS NULL OR DATE(t.due_at) >= CURDATE())";
 
   const tasks = await q(
     `SELECT t.*, l.name AS lead_name, d.title AS deal_title, d.value AS deal_value, u.name AS assigned_name
@@ -34,7 +37,7 @@ export async function index(req, res) {
   const mineFilter = 'AND (t.assigned_to = ? OR t.assigned_to IS NULL)';
   const [[{ mine }], [{ overdue }], [{ team }], [{ completed }]] = await Promise.all([
     q(`SELECT COUNT(*) AS mine FROM tasks t WHERE t.company_id=? AND t.done=0 ${mineFilter}`, [req.companyId, req.user.id]),
-    q(`SELECT COUNT(*) AS overdue FROM tasks t WHERE t.company_id=? AND t.done=0 AND t.due_at IS NOT NULL AND t.due_at < NOW() ${mineFilter}`, [req.companyId, req.user.id]),
+    q(`SELECT COUNT(*) AS overdue FROM tasks t WHERE t.company_id=? AND t.done=0 AND t.due_at IS NOT NULL AND DATE(t.due_at) < CURDATE() ${mineFilter}`, [req.companyId, req.user.id]),
     q('SELECT COUNT(*) AS team FROM tasks t WHERE t.company_id=? AND t.done=0', [req.companyId]),
     q('SELECT COUNT(*) AS completed FROM tasks t WHERE t.company_id=? AND t.done=1', [req.companyId]),
   ]);
@@ -63,7 +66,12 @@ export async function store(req, res) {
 export async function markDone(req, res) {
   const task = await one('SELECT assigned_to, created_by FROM tasks WHERE id=? AND company_id=? LIMIT 1', [Number(req.params.id), req.companyId]);
   if (!task) return fail(res, 'Task not found.', 404);
-  if (!hasRole(req.user, 'admin', 'superadmin', 'manager') && task.assigned_to !== req.user.id && task.created_by !== req.user.id) {
+  // Unassigned tasks (e.g. the auto-created "Welcome new lead"/import-summary
+  // tasks) are shown to everyone in the list as up-for-grabs — anyone should be
+  // able to complete one, not just an admin/manager, or this "Mark as done"
+  // click 403s for the exact tasks a regular agent is meant to pick up.
+  if (task.assigned_to !== null
+    && !hasRole(req.user, 'admin', 'superadmin', 'manager') && task.assigned_to !== req.user.id && task.created_by !== req.user.id) {
     return fail(res, 'Forbidden.', 403);
   }
   await run('UPDATE tasks SET done=1, done_at=NOW() WHERE id=? AND company_id=?', [Number(req.params.id), req.companyId]);

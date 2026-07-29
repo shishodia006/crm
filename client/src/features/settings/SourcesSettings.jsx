@@ -11,7 +11,7 @@ const STATUS_LABEL = { healthy: 'Healthy', warning: 'Needs Attention', error: 'F
 const APP_URL = (import.meta.env.VITE_API_BASE || 'http://localhost:8090');
 
 // These slugs each have a real, dedicated integration (OAuth/token connect,
-// working sync and/or webhook) under Settings → Integrations → Lead Sources
+// working sync and/or webhook) under Third Party Apps → Lead Sources
 // API — that page's per-source webhook key is what's actually checked at
 // request time, not the generic integration_accounts-based one this page
 // would otherwise create. Showing the old API Key/Webhook form for them here
@@ -195,10 +195,10 @@ export default function SourcesSettings() {
                     <>
                       <p className="text-13 text-muted-2 mb-2">
                         {selected.name} has a dedicated setup (API key/OAuth, real sync, and/or real-time webhook) under{' '}
-                        <strong>Settings → Integrations → Lead Sources API</strong>. Configure and connect it there —
+                        <strong>Third Party Apps → Lead Sources API</strong>. Configure and connect it there —
                         this generic form isn't wired to that connection.
                       </p>
-                      <a href="/settings/integrations" className="btn btn-outline-secondary w-100 justify-content-center d-flex align-items-center gap-1">
+                      <a href="/integrations" className="btn btn-outline-secondary w-100 justify-content-center d-flex align-items-center gap-1">
                         Go to Lead Sources API settings
                       </a>
                     </>

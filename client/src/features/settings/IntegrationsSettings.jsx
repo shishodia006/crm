@@ -41,6 +41,47 @@ const Select = ({ label, name, value, options, onChange }) => (
   </div>
 );
 
+// Quick-fill presets for the IMAP/SMTP host+port fields — picking a mailbox
+// provider fills in its known-good settings instead of the user having to look
+// them up (this is what actually makes Microsoft/Outlook mailboxes "just work"
+// here: same generic SMTP/IMAP form as Gmail, just with Outlook's own host/port).
+const MAIL_PROVIDER_PRESETS = [
+  { key: 'custom', label: 'Custom / Other' },
+  {
+    key: 'gmail', label: 'Gmail / Google Workspace',
+    imap_host: 'imap.gmail.com', imap_port: '993', smtp_host: 'smtp.gmail.com', smtp_port: '587',
+    hint: 'Use an App Password (Google Account → Security → 2-Step Verification → App Passwords) — your normal Gmail password won’t work here.',
+  },
+  {
+    key: 'outlook', label: 'Outlook / Microsoft 365',
+    imap_host: 'outlook.office365.com', imap_port: '993', smtp_host: 'smtp.office365.com', smtp_port: '587',
+    hint: 'Use an App Password (Microsoft Account → Security → App passwords). If your organization has disabled app passwords, use "Outlook OAuth" as the Provider above instead.',
+  },
+  {
+    key: 'yahoo', label: 'Yahoo Mail',
+    imap_host: 'imap.mail.yahoo.com', imap_port: '993', smtp_host: 'smtp.mail.yahoo.com', smtp_port: '587',
+    hint: 'Generate an App Password from Yahoo Account Info → Account Security → Generate app password.',
+  },
+];
+const IMAP_PORT_OPTIONS = [
+  { value: '993', label: '993 (IMAP over SSL — standard)' },
+  { value: '143', label: '143 (IMAP, STARTTLS)' },
+];
+const SMTP_PORT_OPTIONS = [
+  { value: '587', label: '587 (SMTP, STARTTLS — recommended)' },
+  { value: '465', label: '465 (SMTP over SSL)' },
+  { value: '25',  label: '25 (SMTP, legacy/unencrypted)' },
+];
+// If whatever's already saved isn't one of the presets above (some provider on
+// an unusual port), add it as its own option instead of the dropdown silently
+// showing nothing selected — an already-configured value should never appear
+// to vanish just because the port field became a dropdown.
+const portOptionsWithCurrent = (presets, currentValue) => {
+  const value = String(currentValue ?? '').trim();
+  if (!value || presets.some((o) => o.value === value)) return presets;
+  return [...presets, { value, label: `${value} (currently set)` }];
+};
+
 const Card = ({ icon, title, badge, children }) => (
   <div className="card crm-int-card mb-4">
     <div className="card-body p-4">
@@ -1174,10 +1215,16 @@ export default function IntegrationsSettings() {
   const [form, setForm] = useState({});
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [mailPreset, setMailPreset] = useState('custom');
 
   useEffect(() => {
     api.get('/api/settings/integrations')
-      .then((d) => setForm(d?.settings ?? d ?? {}))
+      .then((d) => {
+        const settings = d?.settings ?? d ?? {};
+        setForm(settings);
+        const known = MAIL_PROVIDER_PRESETS.find((p) => p.imap_host && p.imap_host === settings.imap_host);
+        setMailPreset(known ? known.key : 'custom');
+      })
       .catch(() => {})
       .finally(() => setLoading(false));
   }, []);
@@ -1190,6 +1237,18 @@ export default function IntegrationsSettings() {
   }, []);
 
   const set = useCallback((name, value) => setForm((p) => ({ ...p, [name]: value })), []);
+
+  const handleMailPresetChange = (key) => {
+    setMailPreset(key);
+    const preset = MAIL_PROVIDER_PRESETS.find((p) => p.key === key);
+    if (preset && preset.imap_host) {
+      setForm((p) => ({
+        ...p,
+        imap_host: preset.imap_host, imap_port: preset.imap_port,
+        smtp_host: preset.smtp_host, smtp_port: preset.smtp_port,
+      }));
+    }
+  };
 
   const save = async (fields) => {
     setSaving(true);
@@ -1258,6 +1317,26 @@ export default function IntegrationsSettings() {
             </div>
           </Card>
 
+          {(!form.email_provider || form.email_provider === 'smtp') && (
+            <Card icon="magic" title="Mailbox Quick Setup">
+              <Select
+                label="Mail Provider"
+                name="mail_preset"
+                value={mailPreset}
+                onChange={(_, v) => handleMailPresetChange(v)}
+                options={MAIL_PROVIDER_PRESETS.map((p) => ({ value: p.key, label: p.label }))}
+              />
+              {MAIL_PROVIDER_PRESETS.find((p) => p.key === mailPreset)?.hint && (
+                <div className="form-text text-11 mt-n2 mb-2">
+                  {MAIL_PROVIDER_PRESETS.find((p) => p.key === mailPreset).hint}
+                </div>
+              )}
+              {mailPreset !== 'custom' && (
+                <div className="text-11 text-muted-3">Host and Port below are filled in automatically — just add your Username and Password/App Password in the sections below.</div>
+              )}
+            </Card>
+          )}
+
           <Card icon="reply-fill" title="Incoming Replies (IMAP)" badge="Optional">
             <p className="text-13 text-muted-3 mb-3">
               Connect the same mailbox you send from so replies show up in Conversations automatically.
@@ -1265,10 +1344,10 @@ export default function IntegrationsSettings() {
             </p>
             <div className="row g-3">
               <div className="col-md-5">
-                <Field label="IMAP Host" name="imap_host" value={form.imap_host} onChange={set} />
+                <Field label="IMAP Host" name="imap_host" value={form.imap_host} onChange={set} readOnly={mailPreset !== 'custom'} />
               </div>
               <div className="col-md-2">
-                <Field label="Port" name="imap_port" type="number" value={form.imap_port || '993'} onChange={set} />
+                <Select label="Port" name="imap_port" value={form.imap_port || '993'} onChange={set} options={portOptionsWithCurrent(IMAP_PORT_OPTIONS, form.imap_port || '993')} />
               </div>
               <div className="col-md-5">
                 <Field label="Username" name="imap_user" value={form.imap_user} onChange={set} />
@@ -1286,10 +1365,10 @@ export default function IntegrationsSettings() {
             <Card icon="hdd-network-fill" title="SMTP Configuration">
               <div className="row g-3">
                 <div className="col-md-5">
-                  <Field label="Host" name="smtp_host" value={form.smtp_host} onChange={set} />
+                  <Field label="Host" name="smtp_host" value={form.smtp_host} onChange={set} readOnly={mailPreset !== 'custom'} />
                 </div>
                 <div className="col-md-2">
-                  <Field label="Port" name="smtp_port" type="number" value={form.smtp_port} onChange={set} />
+                  <Select label="Port" name="smtp_port" value={form.smtp_port || '587'} onChange={set} options={portOptionsWithCurrent(SMTP_PORT_OPTIONS, form.smtp_port || '587')} />
                 </div>
                 <div className="col-md-5">
                   <Field label="Username" name="smtp_user" value={form.smtp_user} onChange={set} />

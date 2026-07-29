@@ -44,7 +44,7 @@ export default function LeadsPage() {
   const navigate = useNavigate();
   const toast    = useToast();
   const [filters, setFilters] = useState({
-    search: '', status: '', category: '', source_id: '', assigned: '', page: 1, limit: 25,
+    search: '', status: '', category: '', source_id: '', assigned: '', date_from: '', date_to: '', page: 1, limit: 25,
   });
   const [importing, setImporting] = useState(false);
   const [selectedIds, setSelectedIds] = useState(() => new Set());
@@ -69,8 +69,8 @@ export default function LeadsPage() {
 
   const set     = (k, v) => setFilters((p) => ({ ...p, [k]: v, page: 1 }));
   const setPage = (p)    => setFilters((f) => ({ ...f, page: p }));
-  const clearAll = ()    => setFilters({ search: '', status: '', category: '', source_id: '', assigned: '', page: 1, limit: filters.limit });
-  const hasFilter = filters.search || filters.status || filters.category || filters.source_id || filters.assigned;
+  const clearAll = ()    => setFilters({ search: '', status: '', category: '', source_id: '', assigned: '', date_from: '', date_to: '', page: 1, limit: filters.limit });
+  const hasFilter = filters.search || filters.status || filters.category || filters.source_id || filters.assigned || filters.date_from || filters.date_to;
 
   const handleExport = () => {
     const eq = new URLSearchParams({ search: filters.search, status: filters.status, category: filters.category, source_id: filters.source_id }).toString();
@@ -140,12 +140,6 @@ export default function LeadsPage() {
         ? <span className="badge badge-source badge-crm">{r.source_name}</span>
         : <span className="text-muted">—</span>
     },
-    { label: 'Type', render: (r) => r.lead_type
-        ? <span className={`badge badge-${r.lead_type === 'direct_client' ? 'direct-client' : 'partner-client'} badge-crm`}>
-            {r.lead_type === 'direct_client' ? 'Direct Client' : 'Partner Client'}
-          </span>
-        : <span className="text-muted">—</span>
-    },
     { label: 'Category', render: (r) => {
       const cat = r.category?.toLowerCase().replace(' ', '_') || 'cold';
       return (
@@ -175,6 +169,12 @@ export default function LeadsPage() {
       <span className={`badge text-bg-${scoreClass(r.score)} badge-crm`}>{r.score ?? 0}</span>
     )},
     { label: 'Added', render: (r) => <span className="text-12 text-muted-2 text-nowrap">{formatDateTime(r.created_at)}</span> },
+    { label: 'Type', render: (r) => r.lead_type
+        ? <span className={`badge badge-${r.lead_type === 'direct_client' ? 'direct-client' : 'partner-client'} badge-crm`}>
+            {r.lead_type === 'direct_client' ? 'Direct Client' : 'Partner Client'}
+          </span>
+        : <span className="text-muted">—</span>
+    },
     { label: 'Email', render: (r) => {
       const sent    = Number(r.email_sent    || 0);
       const opened  = Number(r.email_opened  || 0);
@@ -323,6 +323,11 @@ export default function LeadsPage() {
             <option value="">All Agents</option>
             {agents.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
           </select>
+          <input type="date" className="form-control form-control-sm w-auto flex-shrink-0" title="From date"
+            value={filters.date_from} onChange={(e) => set('date_from', e.target.value)} />
+          <span className="text-muted text-12 flex-shrink-0">to</span>
+          <input type="date" className="form-control form-control-sm w-auto flex-shrink-0" title="To date"
+            value={filters.date_to} onChange={(e) => set('date_to', e.target.value)} />
           {hasFilter && (
             <button className="btn btn-sm btn-outline-secondary rounded-crm-xs text-12" onClick={clearAll}>
               <i className="bi bi-x-circle me-1" />Clear

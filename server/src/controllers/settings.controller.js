@@ -43,8 +43,13 @@ export async function saveSettings(req, res) {
   ok(res, null, 'Settings saved.');
 }
 
-export async function getUsers(_req, res) {
-  const users = await q('SELECT id,name,email,role,status,is_active,last_login_at,created_at FROM users ORDER BY created_at DESC');
+export async function getUsers(req, res) {
+  const users = await q(
+    `SELECT u.id,u.name,u.email,u.role,u.status,u.is_active,u.last_login_at,u.created_at, cu.role AS company_role
+     FROM users u JOIN company_users cu ON cu.user_id=u.id
+     WHERE cu.company_id=? ORDER BY u.created_at DESC`,
+    [req.companyId]
+  );
   ok(res, { users });
 }
 
@@ -113,12 +118,17 @@ export async function createUser(req, res) {
 }
 
 export async function updateUser(req, res) {
+  const userId = Number(req.params.id);
+  const member = await one('SELECT user_id FROM company_users WHERE company_id=? AND user_id=? LIMIT 1', [req.companyId, userId]);
+  if (!member) return fail(res, 'User not found.', 404);
+
   const data = {};
   if (req.body.name) data.name = String(req.body.name).trim();
   if (req.body.role) data.role = req.body.role;
   if (req.body.is_active !== undefined) data.is_active = boolInt(req.body.is_active);
   if (req.body.password && String(req.body.password).length >= 8) data.password = await bcrypt.hash(String(req.body.password), 12);
-  await updateById('users', Number(req.params.id), data);
+  await updateById('users', userId, data);
+  if (req.body.role) await run('UPDATE company_users SET role=? WHERE company_id=? AND user_id=?', [req.body.role, req.companyId, userId]);
   ok(res, null, 'User updated.');
 }
 

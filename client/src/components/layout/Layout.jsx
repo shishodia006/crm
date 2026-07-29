@@ -60,7 +60,7 @@ const NAV_SECTIONS = [
   { label: 'Ecosystem', items: [
     { to: '/sources',      icon: 'signpost-split-fill', label: 'Sources' },
     { to: '/channels',     icon: 'broadcast',            label: 'Channels' },
-    { to: '/integrations', icon: 'plug-fill',            label: 'Third Party Apps' },
+    { to: '/integrations', icon: 'plug-fill',            label: 'Integrations' },
   ]},
 ];
 const ADMIN_ITEMS = [

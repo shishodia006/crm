@@ -289,6 +289,14 @@ export default function ConversationsPage() {
   // Ding when a new inbound reply lands in the thread that's currently open —
   // the notification bell already covers replies on threads you're not looking at.
   const lastInboundIdRef = useRef(null);
+
+  // Switching to a different conversation must not itself trigger a ding —
+  // reset the baseline so only a genuinely new reply (while this thread stays
+  // open) counts, not just clicking into a thread with an older last message.
+  useEffect(() => {
+    lastInboundIdRef.current = null;
+  }, [selectedId]);
+
   useEffect(() => {
     if (!messages.length) return;
     const lastInbound = [...messages].reverse().find((m) => m.direction === 'in');

@@ -19,7 +19,7 @@ export async function index(req, res) {
   const [pagination, sources, agents] = await Promise.all([
     listLeads(filters, page, perPage, req.companyId),
     q("SELECT id,name FROM lead_sources WHERE is_active=1 ORDER BY CASE WHEN slug='manual' THEN 0 ELSE 1 END, name"),
-    q("SELECT id,name FROM users WHERE role IN ('agent','manager') AND is_active=1 ORDER BY name")
+    q("SELECT u.id,u.name FROM users u JOIN company_users cu ON cu.user_id=u.id WHERE cu.company_id=? AND u.role IN ('agent','manager') AND u.is_active=1 ORDER BY u.name", [req.companyId])
   ]);
   ok(res, { leads: pagination.data, pagination, filters, sources, agents });
 }
@@ -67,7 +67,7 @@ export async function show(req, res) {
   const [timeline, campaigns, agents, sources, enrollments, scoreHistory] = await Promise.all([
     leadTimeline(leadId),
     q("SELECT id,name FROM campaigns WHERE status='active' AND company_id=? ORDER BY name", [req.companyId]),
-    q("SELECT id,name FROM users WHERE role IN ('agent','manager') AND is_active=1 ORDER BY name"),
+    q("SELECT u.id,u.name FROM users u JOIN company_users cu ON cu.user_id=u.id WHERE cu.company_id=? AND u.role IN ('agent','manager') AND u.is_active=1 ORDER BY u.name", [req.companyId]),
     q('SELECT id,name FROM lead_sources WHERE is_active=1 ORDER BY name'),
     q(`SELECT le.*, c.name AS campaign_name FROM lead_enrollments le LEFT JOIN campaigns c ON c.id=le.campaign_id WHERE le.lead_id=? AND c.company_id=? ORDER BY le.enrolled_at DESC`, [leadId, req.companyId]),
     q('SELECT * FROM lead_score_events WHERE lead_id=? ORDER BY created_at DESC LIMIT 10', [leadId])
@@ -338,7 +338,7 @@ export async function enrollmentDetail(req, res) {
 export async function meta(req, res) {
   const [sources, agents, stages, templates, campaigns] = await Promise.all([
     q('SELECT id,name,slug,category FROM lead_sources WHERE is_active=1 ORDER BY name'),
-    q("SELECT id,name,email,role FROM users WHERE role IN ('agent','manager','admin','superadmin') AND is_active=1 ORDER BY name"),
+    q("SELECT u.id,u.name,u.email,u.role FROM users u JOIN company_users cu ON cu.user_id=u.id WHERE cu.company_id=? AND u.role IN ('agent','manager','admin','superadmin') AND u.is_active=1 ORDER BY u.name", [req.companyId]),
     q('SELECT * FROM pipeline_stages WHERE is_active=1 ORDER BY stage_order'),
     q("SELECT id,name,channel,subject,body,wa_template_id,status,integration_account_id FROM templates WHERE status!='archived' AND company_id=? ORDER BY channel,name", [req.companyId]),
     q("SELECT id,name,status FROM campaigns WHERE status IN ('active','draft','paused') AND company_id=? ORDER BY name", [req.companyId])
