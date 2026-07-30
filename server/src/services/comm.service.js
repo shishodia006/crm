@@ -215,6 +215,36 @@ function getSmtpTransporter(host, port, user, pass) {
   return transporter;
 }
 
+// Free-text WhatsApp send — Anantya's "session message" endpoint, usable any
+// time there's an open 24-hour customer-care window (i.e. the lead messaged
+// in recently), unlike SendSingleTemplateMessage which always requires a
+// pre-approved template. Used for replies typed straight into Conversations
+// instead of picking a template from "New Message".
+async function sendAnantyaText(apiKey, to, msgText) {
+  const url = 'https://apiv1.anantya.ai/api/Messages/sendtext';
+  let response;
+  try {
+    response = await fetch(url, {
+      method: 'POST',
+      headers: { 'X-Api-Key': apiKey, accept: '*/*', 'Content-Type': 'application/json' },
+      body: JSON.stringify({ msgText, contactNo: to }),
+    });
+  } catch (fetchErr) {
+    return { success: false, msgId: null, error: `network_error: ${fetchErr.message}` };
+  }
+
+  const text = await response.text().catch(() => '');
+  let data = {};
+  try { data = JSON.parse(text); } catch {}
+
+  console.log(`[anantya][whatsapp-text] HTTP ${response.status} | raw: ${text.slice(0, 300)}`);
+
+  const success = data.isSuccess ?? data.IsSuccess ?? response.ok;
+  const msgId   = data.dataObj?.msgId ?? data.DataObj?.MsgId ?? null;
+  const error   = success ? null : (data.message || data.Message || text.slice(0, 200) || `HTTP ${response.status}`);
+  return { success, msgId, error };
+}
+
 async function sendAnantya(channel, apiKey, to, anantya_template_id, variables = [], contactName = '') {
   const ANANTYA_BASE = 'https://apiv1.anantya.ai';
   const url = `${ANANTYA_BASE}/api/Campaign/SendSingleTemplateMessage?templateId=${anantya_template_id}`;
@@ -421,6 +451,28 @@ export async function sendCommunication(channel, lead, template, enrollmentId = 
       return { delivered: false, comm_id: commId, error: 'anantya_wa_key_not_configured' };
     }
     const anantya_template_id = template?.wa_template_id;
+    // No approved template picked (a free-text Conversations reply, not a "New
+    // Message"/drip send) — try Anantya's session-message endpoint instead of
+    // hard-failing. Anantya itself enforces the 24h customer-care window; if
+    // it's closed, their API rejects it and that error surfaces to the user.
+    if (!anantya_template_id && !template?.id && String(template?.body || '').trim()) {
+      try {
+        const to = normalizePhone(lead.mobile);
+        const res = await sendAnantyaText(apiKey, to, renderTemplate(template.body, lead));
+        if (res.success) {
+          await run(
+            "UPDATE communications SET status='sent', provider='anantya_whatsapp_text', provider_msg_id=?, sent_at=NOW() WHERE id=?",
+            [res.msgId, commId]
+          );
+          return { delivered: true, comm_id: commId, provider_msg_id: res.msgId, error: null };
+        }
+        await run("UPDATE communications SET status='failed', failed_reason=? WHERE id=?", [String(res.error).slice(0, 500), commId]);
+        return { delivered: false, comm_id: commId, error: res.error };
+      } catch (err) {
+        await run("UPDATE communications SET status='failed', failed_reason=? WHERE id=?", [String(err.message).slice(0, 500), commId]);
+        return { delivered: false, comm_id: commId, error: err.message };
+      }
+    }
     if (!anantya_template_id) {
       await run("UPDATE communications SET status='failed', failed_reason='no_wa_template_id_on_template' WHERE id=?", [commId]);
       return { delivered: false, comm_id: commId, error: 'no_wa_template_id_on_template' };

@@ -243,7 +243,11 @@ export async function recordInboundMessage({
 // WhatsApp/RCS go through Anantya's template-send API — there's no free-text
 // endpoint in this integration, so a real template row (with wa_template_id)
 // is required for those channels. Email/SMS can send free-form text.
-const TEMPLATE_ONLY_CHANNELS = ['whatsapp', 'rcs'];
+// RCS has no free-text/session-message API (Google RCS Business Messaging
+// requires an approved template for every send) — WhatsApp does, via Anantya's
+// /api/Messages/sendtext session-message endpoint (see sendCommunication in
+// comm.service.js), so it's no longer forced through the template picker.
+const TEMPLATE_ONLY_CHANNELS = ['rcs'];
 
 export async function sendReply(companyId, conversationId, userId, body, templateId = null, integrationAccountId = null) {
   const conversation = await one('SELECT * FROM conversations WHERE id=? AND company_id=? LIMIT 1', [conversationId, companyId]);

@@ -25,9 +25,13 @@ function buildListQuery(filter, search) {
   return `/api/conversations?${params.toString()}`;
 }
 
-// WhatsApp/RCS send through Anantya's approved-template API — there's no free-text
-// send for these, so a template must be picked (Email/SMS can be freehand).
+// Starting a brand-new conversation on WhatsApp/RCS must use an approved
+// template (WhatsApp policy — you can't cold-message someone free-text).
 const TEMPLATE_ONLY_CHANNELS = ['whatsapp', 'rcs'];
+// Replying within an already-open thread is different: WhatsApp allows free-text
+// "session messages" for 24h after the lead's last message (Anantya's
+// /api/Messages/sendtext); RCS has no such allowance, still template-only.
+const REPLY_TEMPLATE_ONLY_CHANNELS = ['rcs'];
 
 /* ── New Message modal ─────────────────────────────────────── */
 function NewMessageModal({ open, onClose, onCreated }) {
@@ -286,6 +290,14 @@ export default function ConversationsPage() {
   const deal = threadData?.deal;
   const messages = threadData?.messages ?? [];
 
+  // WhatsApp free-text replies only work inside the 24h customer-care window
+  // that opens after the lead's last inbound message — once it's been more
+  // than 24h (or the lead has never messaged in at all), Anantya will reject
+  // a free-text send, so surface that in the UI before the user tries.
+  const lastInbound = [...messages].reverse().find((m) => m.direction === 'in');
+  const waWindowClosed = conversation?.channel === 'whatsapp'
+    && (!lastInbound || (Date.now() - new Date(lastInbound.created_at).getTime()) > 24 * 3600 * 1000);
+
   // Ding when a new inbound reply lands in the thread that's currently open —
   // the notification bell already covers replies on threads you're not looking at.
   const lastInboundIdRef = useRef(null);
@@ -403,10 +415,16 @@ export default function ConversationsPage() {
                 ))}
               </div>
 
-              {TEMPLATE_ONLY_CHANNELS.includes(conversation.channel) ? (
+              {REPLY_TEMPLATE_ONLY_CHANNELS.includes(conversation.channel) ? (
                 <div className="text-11 text-muted-3 p-2 text-center border-top">
                   <i className="bi bi-info-circle me-1" />
-                  {conversation.channel === 'whatsapp' ? 'WhatsApp' : 'RCS'} only sends approved templates — open <strong>New Message</strong> to pick one for this lead.
+                  RCS only sends approved templates — open <strong>New Message</strong> to pick one for this lead.
+                </div>
+              ) : waWindowClosed ? (
+                <div className="text-11 text-muted-3 p-2 text-center border-top bg-light">
+                  <i className="bi bi-clock-history me-1" />
+                  24-hour reply window closed — this lead hasn't messaged in recently, so free-text replies aren't allowed.
+                  Open <strong>New Message</strong> and send an approved template to restart the conversation.
                 </div>
               ) : (
                 <form className="crm-conv-reply" onSubmit={sendReply}>

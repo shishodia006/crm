@@ -54,14 +54,27 @@ export default function TemplatesTab() {
   const rcsAccounts = accountsFor('rcs');
   const accountName = (id) => (id ? accounts.find((a) => String(a.id) === String(id))?.name : null) || 'Company default';
 
-  const syncWa = async (syncChannel, accountId) => {
+  const syncWa = async (syncChannel, accountId, silent = false) => {
     try {
       const acctParam = accountId ? `&account_id=${accountId}` : '';
       const r = await api.get(`/api/templates/wa-sync?save=1&channel=${syncChannel}${acctParam}`);
-      toast(`Synced ${r.imported ?? 0} ${syncChannel === 'rcs' ? 'RCS' : 'WhatsApp'} templates.`, 'success');
+      if (!silent) toast(`Synced ${r.imported ?? 0} ${syncChannel === 'rcs' ? 'RCS' : 'WhatsApp'} templates.`, 'success');
       reload();
-    } catch (err) { toast(err.message, 'danger'); }
+    } catch (err) {
+      // Auto-sync on page load stays quiet on failure (e.g. RCS not authorized
+      // on this Anantya account yet) — only a manual button click should nag.
+      if (!silent) toast(err.message, 'danger');
+      else console.error(`[templates] auto-sync ${syncChannel} failed:`, err.message);
+    }
   };
+
+  // Auto-sync once per visit so newly-created templates in Anantya show up
+  // here without a manual "Sync WhatsApp"/"Sync RCS" click.
+  useEffect(() => {
+    syncWa('whatsapp', null, true);
+    syncWa('rcs', null, true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
     <div>
