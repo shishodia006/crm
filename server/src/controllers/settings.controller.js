@@ -59,8 +59,44 @@ export async function inviteUser(req, res) {
   const role = ['agent', 'manager', 'admin'].includes(req.body.role) ? req.body.role : 'agent';
   if (!name || !email) return fail(res, 'Name and email are required.', 422);
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return fail(res, 'Invalid email address.', 422);
-  const exists = await one('SELECT id FROM users WHERE email=? LIMIT 1', [email]);
-  if (exists) return fail(res, 'Email already exists.', 422);
+  const existing = await one('SELECT id FROM users WHERE email=? LIMIT 1', [email]);
+
+  // Email already belongs to a user somewhere in the system (their own account,
+  // or a member of a different company). Add that same person to THIS company
+  // instead of blocking — only reject if they're already a member of this company.
+  if (existing) {
+    const alreadyMember = await one('SELECT 1 FROM company_users WHERE company_id=? AND user_id=? LIMIT 1', [req.companyId, existing.id]);
+    if (alreadyMember) return fail(res, 'This user is already a member of your company.', 422);
+
+    await run('INSERT INTO company_users (company_id,user_id,role) VALUES (?,?,?)', [req.companyId, existing.id, role]);
+
+    let emailSent = false;
+    try {
+      const smtpHost = await getSetting('smtp_host', '', req.companyId);
+      if (smtpHost) {
+        const smtpPort = await getSetting('smtp_port', '587', req.companyId);
+        const transporter = nodemailer.createTransport({
+          host: smtpHost,
+          port: Number(smtpPort),
+          secure: smtpPort === '465',
+          auth: { user: await getSetting('smtp_user', '', req.companyId), pass: await getSetting('smtp_pass', '', req.companyId) }
+        });
+        const from = await getSetting('smtp_from', await getSetting('smtp_user', '', req.companyId), req.companyId);
+        const fromName = await getSetting('smtp_from_name', 'Dot Domino CRM', req.companyId);
+        await transporter.sendMail({
+          from: `${fromName} <${from}>`,
+          to: email,
+          subject: `You've been added to ${fromName}`,
+          html: `<p>Hi ${name},</p><p>You've been added to ${fromName} on Dot Domino CRM as ${role}. Log in with your existing password and switch to this company from the company switcher.</p><p><a href="${config.appUrl}/login">Log in</a></p>`
+        });
+        emailSent = true;
+      }
+    } catch (error) {
+      console.error('[invite] email send failed:', error.message);
+    }
+
+    return ok(res, { id: existing.id, email_sent: emailSent }, emailSent ? `${email} already has an account — added them to your company and emailed them.` : `${email} already has an account — added them to your company.`);
+  }
 
   const placeholderHash = await bcrypt.hash(crypto.randomBytes(32).toString('hex'), 12);
   const result = await run(

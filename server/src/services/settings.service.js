@@ -88,7 +88,12 @@ export async function companySettings(companyId, groups = []) {
 }
 
 export async function saveCompanySetting(companyId, key, value, group = 'general') {
-  const stored = isSensitive(key) && value ? encryptValue(value) : (value ?? '');
+  // Copy-pasted API keys/tokens very commonly carry an invisible leading/trailing
+  // space or newline (from Slack, WhatsApp, email, etc.) — sent to the provider
+  // as-is this breaks auth in a way that's nearly impossible to spot by eye, so
+  // trim before it's ever encrypted/stored.
+  const cleaned = typeof value === 'string' ? value.trim() : value;
+  const stored = isSensitive(key) && cleaned ? encryptValue(cleaned) : (cleaned ?? '');
   await run(
     'INSERT INTO company_settings (company_id,`key`,`value`,`group`) VALUES (?,?,?,?) ON DUPLICATE KEY UPDATE `value`=VALUES(`value`), `group`=VALUES(`group`)',
     [companyId, key, stored, group]
@@ -98,7 +103,8 @@ export async function saveCompanySetting(companyId, key, value, group = 'general
 export async function saveSetting(key, value, group = 'general', conn = undefined) {
   const { run: _run } = await import('../db/pool.js');
   const exec = conn ? _run : run;
-  const stored = isSensitive(key) && value ? encryptValue(value) : (value ?? '');
+  const cleaned = typeof value === 'string' ? value.trim() : value;
+  const stored = isSensitive(key) && cleaned ? encryptValue(cleaned) : (cleaned ?? '');
   await (conn
     ? conn.execute(
         'INSERT INTO settings (`key`,`value`,`group`) VALUES (?,?,?) ON DUPLICATE KEY UPDATE `value`=VALUES(`value`), `group`=VALUES(`group`)',

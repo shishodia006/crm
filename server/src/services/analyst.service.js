@@ -43,8 +43,8 @@ CRM DATA SNAPSHOT (JSON):
 `;
 
 export async function askAnalyst(companyId, priorMessages, question) {
-  const apiUrl = await getSetting('ai_api_url', '', companyId);
-  const apiKey = await getSetting('ai_api_key', '', companyId);
+  const apiUrl = (await getSetting('ai_api_url', '', companyId)).trim();
+  const apiKey = (await getSetting('ai_api_key', '', companyId)).trim();
   if (!apiUrl || !apiKey) {
     const err = new Error('AI provider is not configured for this company.');
     err.code = 'ai_provider_not_configured';
