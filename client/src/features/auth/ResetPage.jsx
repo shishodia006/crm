@@ -9,6 +9,7 @@ export default function ResetPage() {
   const [form, setForm] = useState({ password: '', confirm: '' });
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [showPass, setShowPass] = useState(false);
 
   useEffect(() => {
     api.get(`/api/auth/reset/${token}`)
@@ -22,7 +23,7 @@ export default function ResetPage() {
     setLoading(true);
     setError('');
     try {
-      await api.post(`/api/auth/reset/${token}`, { password: form.password });
+      await api.post(`/api/auth/reset/${token}`, { password: form.password, password_confirm: form.confirm });
       navigate('/login');
     } catch (err) {
       setError(err.message || 'Reset failed');
@@ -50,23 +51,33 @@ export default function ResetPage() {
           <form onSubmit={handleSubmit}>
             <div className="mb-3">
               <label className="form-label">New password</label>
-              <input
-                type="password"
-                value={form.password}
-                onChange={(e) => setForm((p) => ({ ...p, password: e.target.value }))}
-                className="form-control"
-                required minLength={8}
-              />
+              <div className="crm-pass-wrap">
+                <input
+                  type={showPass ? 'text' : 'password'}
+                  value={form.password}
+                  onChange={(e) => setForm((p) => ({ ...p, password: e.target.value }))}
+                  className="form-control"
+                  required minLength={8}
+                />
+                <button type="button" className="crm-pass-eye" tabIndex={-1} onClick={() => setShowPass((v) => !v)}>
+                  <i className={`bi bi-eye${showPass ? '-slash' : ''}`} />
+                </button>
+              </div>
             </div>
             <div className="mb-3">
               <label className="form-label">Confirm password</label>
-              <input
-                type="password"
-                value={form.confirm}
-                onChange={(e) => setForm((p) => ({ ...p, confirm: e.target.value }))}
-                className="form-control"
-                required
-              />
+              <div className="crm-pass-wrap">
+                <input
+                  type={showPass ? 'text' : 'password'}
+                  value={form.confirm}
+                  onChange={(e) => setForm((p) => ({ ...p, confirm: e.target.value }))}
+                  className="form-control"
+                  required
+                />
+                <button type="button" className="crm-pass-eye" tabIndex={-1} onClick={() => setShowPass((v) => !v)}>
+                  <i className={`bi bi-eye${showPass ? '-slash' : ''}`} />
+                </button>
+              </div>
             </div>
             <button className="btn-crm w-100 justify-content-center" disabled={loading}>
               {loading ? 'Saving…' : 'Reset password'}
