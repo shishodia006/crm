@@ -4,6 +4,7 @@ import { useToast } from '../../hooks/useToast.js';
 import { useConfirm } from '../../hooks/useConfirm.js';
 import LoadingBox from '../../components/common/LoadingBox.jsx';
 import PasswordInput from '../../components/common/PasswordInput.jsx';
+import { timeAgo } from '../../utils/formatters.js';
 
 /* ── Helpers ─────────────────────────────────────────── */
 const Field = ({ label, name, type = 'text', value, onChange, readOnly, hint }) => (
@@ -145,9 +146,107 @@ const APP_URL = (import.meta.env.VITE_API_BASE || 'http://localhost:8090');
 // directly for webhook URLs the *provider's servers* call, not the browser.
 const FRONTEND_URL = window.location.origin;
 
-function GoogleSheetsCard({ form, set, saving, save, toast }) {
+function GoogleSheetConnectionRow({ conn, onChanged, toast }) {
+  const confirm = useConfirm();
+  const [editing, setEditing] = useState(false);
+  const [name, setName] = useState(conn.name);
+  const [sheetIdOrUrl, setSheetIdOrUrl] = useState(conn.sheet_id);
+  const [range, setRange] = useState(conn.range);
+  const [busy, setBusy] = useState(false);
+
+  const sync = async () => {
+    setBusy(true);
+    try {
+      const r = await api.post(`/api/settings/apps/google-sheets/connections/${conn.id}/sync`, {});
+      toast(`Synced: ${r.imported} new, ${r.duplicates} duplicate(s), ${r.failed} failed (of ${r.total} rows).`, r.failed ? 'warning' : 'success');
+      onChanged();
+    } catch (err) {
+      toast(err.message || 'Sync failed.', 'danger');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const saveEdit = async () => {
+    setBusy(true);
+    try {
+      await api.put(`/api/settings/apps/google-sheets/connections/${conn.id}`, { name, sheetIdOrUrl, range });
+      toast('Sheet updated.', 'success');
+      setEditing(false);
+      onChanged();
+    } catch (err) {
+      toast(err.message || 'Update failed.', 'danger');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const remove = async () => {
+    const yes = await confirm(`Stop syncing "${conn.name}"? Leads already imported stay in the CRM.`, { title: 'Remove this sheet?', danger: true, confirmLabel: 'Remove' });
+    if (!yes) return;
+    setBusy(true);
+    try {
+      await api.delete(`/api/settings/apps/google-sheets/connections/${conn.id}`);
+      toast('Sheet removed.', 'success');
+      onChanged();
+    } catch (err) {
+      toast(err.message || 'Remove failed.', 'danger');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (editing) {
+    return (
+      <div className="py-3 border-bottom d-flex flex-column gap-2">
+        <input className="crm-input" value={name} onChange={(e) => setName(e.target.value)} placeholder="Sheet name" />
+        <input className="crm-input" value={sheetIdOrUrl} onChange={(e) => setSheetIdOrUrl(e.target.value)} placeholder="Sheet URL or ID" />
+        <input className="crm-input" value={range} onChange={(e) => setRange(e.target.value)} placeholder="Range" />
+        <div className="d-flex gap-2">
+          <button type="button" className="btn btn-crm btn-sm" disabled={busy} onClick={saveEdit}>Save</button>
+          <button type="button" className="btn btn-outline-secondary btn-sm" disabled={busy} onClick={() => setEditing(false)}>Cancel</button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="d-flex align-items-center justify-content-between gap-2 py-2 border-bottom flex-wrap">
+      <div>
+        <div className="fw-bold text-13">{conn.name}</div>
+        <div className="text-muted text-11">
+          {conn.lead_count} lead{Number(conn.lead_count) === 1 ? '' : 's'} · Range {conn.range} ·{' '}
+          {conn.last_synced_at ? `Synced ${timeAgo(conn.last_synced_at)} ago` : 'Never synced'}
+        </div>
+      </div>
+      <div className="d-flex gap-1">
+        <button type="button" className="btn btn-outline-secondary btn-sm" disabled={busy} onClick={sync}>{busy ? '…' : 'Sync'}</button>
+        <button type="button" className="btn btn-outline-secondary btn-sm" disabled={busy} onClick={() => setEditing(true)}>Edit</button>
+        <button type="button" className="btn btn-outline-danger btn-sm" disabled={busy} onClick={remove}>Remove</button>
+      </div>
+    </div>
+  );
+}
+
+function GoogleSheetsCard({ form, set, toast }) {
   const [disconnecting, setDisconnecting] = useState(false);
+  const [connections, setConnections] = useState([]);
+  const [loadingConnections, setLoadingConnections] = useState(true);
+  const [adding, setAdding] = useState(false);
+  const [newName, setNewName] = useState('');
+  const [newSheetIdOrUrl, setNewSheetIdOrUrl] = useState('');
+  const [newRange, setNewRange] = useState('A1:Z10000');
   const connectedEmail = form.google_sheets_email;
+
+  const loadConnections = useCallback(() => {
+    setLoadingConnections(true);
+    api.get('/api/settings/apps/google-sheets/connections')
+      .then((d) => setConnections(d?.connections ?? []))
+      .catch(() => {})
+      .finally(() => setLoadingConnections(false));
+  }, []);
+
+  useEffect(() => { loadConnections(); }, [loadConnections]);
 
   const disconnect = async () => {
     setDisconnecting(true);
@@ -162,37 +261,69 @@ function GoogleSheetsCard({ form, set, saving, save, toast }) {
     }
   };
 
+  const addSheet = async () => {
+    setAdding(true);
+    try {
+      await api.post('/api/settings/apps/google-sheets/connections', { name: newName, sheetIdOrUrl: newSheetIdOrUrl, range: newRange });
+      toast('Sheet added.', 'success');
+      setNewName('');
+      setNewSheetIdOrUrl('');
+      setNewRange('A1:Z10000');
+      loadConnections();
+    } catch (err) {
+      toast(err.message || 'Could not add sheet.', 'danger');
+    } finally {
+      setAdding(false);
+    }
+  };
+
   return (
     <Card icon="file-earmark-spreadsheet-fill" title="Google Sheets" badge={connectedEmail ? 'Connected' : undefined}>
-        <div className="d-flex align-items-center gap-2 mb-3 flex-wrap">
-          {connectedEmail ? (
-            <>
-              <span className="badge badge-crm badge-live d-inline-flex align-items-center gap-1">
-                <i className="bi bi-check-circle-fill" />{connectedEmail}
-              </span>
-              <button type="button" className="btn btn-outline-danger btn-sm" onClick={disconnect} disabled={disconnecting}>
-                {disconnecting ? 'Disconnecting…' : 'Disconnect'}
-              </button>
-            </>
-          ) : (
-            <a href="/oauth/google_sheets" className="btn btn-outline-secondary btn-sm d-flex align-items-center gap-1">
-              <i className="bi bi-google" />Connect with Google
-            </a>
-          )}
-        </div>
+      <div className="d-flex align-items-center gap-2 mb-3 flex-wrap">
+        {connectedEmail ? (
+          <>
+            <span className="badge badge-crm badge-live d-inline-flex align-items-center gap-1">
+              <i className="bi bi-check-circle-fill" />{connectedEmail}
+            </span>
+            <button type="button" className="btn btn-outline-danger btn-sm" onClick={disconnect} disabled={disconnecting}>
+              {disconnecting ? 'Disconnecting…' : 'Disconnect'}
+            </button>
+          </>
+        ) : (
+          <a href="/oauth/google_sheets" className="btn btn-outline-secondary btn-sm d-flex align-items-center gap-1">
+            <i className="bi bi-google" />Connect with Google
+          </a>
+        )}
+      </div>
 
-        <hr className="my-3" />
-        <Field label="Sheet URL or ID" name="google_sheets_id" value={form.google_sheets_id} onChange={set}
-          hint="Paste the full Google Sheets URL, or just the Sheet ID." />
-        <Field label="Range" name="google_sheets_range" value={form.google_sheets_range || 'A1:Z10000'} onChange={set}
-          hint="First row must be column headers (Name, Email, Mobile, Company…). Default covers most sheets." />
-        <SaveBtn saving={saving} label="Save Sheet"
-          onClick={() => save(['google_sheets_id', 'google_sheets_range'])} />
-        <p className="text-muted text-11 mt-2 mb-0">
-          Share the sheet with the connected Google account above (or make it viewable by anyone with the link), then use
-          <strong> Sync Now</strong> on the Integrations page to pull leads in.
-        </p>
-      </Card>
+      <hr className="my-3" />
+      <div className="text-11 fw-bold text-uppercase ls-wide text-muted-3 mb-2">Connected Sheets</div>
+      {loadingConnections ? (
+        <div className="text-muted text-12 mb-3">Loading…</div>
+      ) : connections.length === 0 ? (
+        <div className="text-muted text-12 mb-3">No sheets added yet — add one below.</div>
+      ) : (
+        <div className="mb-3">
+          {connections.map((c) => <GoogleSheetConnectionRow key={c.id} conn={c} onChanged={loadConnections} toast={toast} />)}
+        </div>
+      )}
+
+      <div className="d-flex flex-column gap-2 p-3 mb-2" style={{ border: '1px dashed var(--bs-border-color)', borderRadius: 8 }}>
+        <div className="text-12 fw-bold">Add a Sheet</div>
+        <input className="crm-input" placeholder="Name (e.g. Trade Show Leads)" value={newName} onChange={(e) => setNewName(e.target.value)} />
+        <input className="crm-input" placeholder="Sheet URL or ID" value={newSheetIdOrUrl} onChange={(e) => setNewSheetIdOrUrl(e.target.value)} />
+        <input className="crm-input" placeholder="Range (default A1:Z10000)" value={newRange} onChange={(e) => setNewRange(e.target.value)} />
+        <button type="button" className="btn-crm" disabled={adding || !newName.trim() || !newSheetIdOrUrl.trim()} onClick={addSheet}>
+          {adding ? 'Adding…' : 'Add Sheet'}
+        </button>
+      </div>
+
+      <p className="text-muted text-11 mb-0">
+        Share each sheet with the connected Google account above (or make it viewable by anyone with the link). First row
+        must be column headers (Name, Email, Mobile, Company…). Each sheet becomes its own Lead Source, tracked separately
+        under Sources.
+      </p>
+    </Card>
   );
 }
 

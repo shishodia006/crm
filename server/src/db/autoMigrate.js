@@ -147,6 +147,49 @@ export async function runAutoMigrations() {
     // 008_conversation_inbound
     await ensureColumn('conversation_messages', 'provider_msg_id', '`provider_msg_id` VARCHAR(255) DEFAULT NULL', 'uniq_conversation_messages_provider_msg', 'ADD UNIQUE INDEX `uniq_conversation_messages_provider_msg` (`channel`,`provider_msg_id`)');
 
+    // 009_google_sheets_multi — a company used to get exactly one Google Sheet
+    // (sheet_id/range stored as plain company_settings keys). Introducing
+    // per-sheet rows means an existing configured sheet has to become the
+    // first row of the new table instead of silently disappearing on upgrade.
+    await pool.query(`CREATE TABLE IF NOT EXISTS \`google_sheet_connections\` (
+      \`id\`              INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+      \`company_id\`      INT UNSIGNED NOT NULL,
+      \`source_id\`       INT UNSIGNED NOT NULL,
+      \`name\`            VARCHAR(150) NOT NULL,
+      \`sheet_id\`        VARCHAR(120) NOT NULL,
+      \`range\`           VARCHAR(60) NOT NULL DEFAULT 'A1:Z10000',
+      \`last_synced_at\`  DATETIME DEFAULT NULL,
+      \`created_at\`      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      \`updated_at\`      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      FOREIGN KEY (\`company_id\`) REFERENCES \`companies\`(\`id\`) ON DELETE CASCADE,
+      FOREIGN KEY (\`source_id\`)  REFERENCES \`lead_sources\`(\`id\`) ON DELETE CASCADE
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`);
+
+    const legacySheetSettings = await q(
+      "SELECT company_id, `key`, `value` FROM company_settings WHERE `key` IN ('google_sheets_id','google_sheets_range') AND `value` IS NOT NULL AND `value` <> ''"
+    );
+    const legacyByCompany = {};
+    for (const row of legacySheetSettings) {
+      (legacyByCompany[row.company_id] ??= {})[row.key] = row.value;
+    }
+    for (const [companyId, vals] of Object.entries(legacyByCompany)) {
+      if (!vals.google_sheets_id) continue;
+      const [{ cnt }] = await q('SELECT COUNT(*) AS cnt FROM google_sheet_connections WHERE company_id=?', [companyId]);
+      if (Number(cnt) > 0) continue; // already migrated (or created fresh post-upgrade)
+      let [source] = await q("SELECT id FROM lead_sources WHERE slug='google_sheets' LIMIT 1");
+      if (!source) {
+        const inserted = await run("INSERT INTO lead_sources (name,slug,category) VALUES ('Google Sheets','google_sheets','external')");
+        source = { id: inserted.insertId };
+      }
+      const sheetIdMatch = String(vals.google_sheets_id).match(/\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/);
+      const sheetId = sheetIdMatch ? sheetIdMatch[1] : String(vals.google_sheets_id).trim();
+      await run(
+        'INSERT INTO google_sheet_connections (company_id, source_id, name, sheet_id, `range`) VALUES (?,?,?,?,?)',
+        [companyId, source.id, 'Google Sheets', sheetId, vals.google_sheets_range || 'A1:Z10000']
+      );
+      console.log(`[auto-migrate] migrated single Google Sheet setting to google_sheet_connections for company #${companyId}`);
+    }
+
     // 004_sms_mshastra (idempotent via ON DUPLICATE KEY)
     await run(`
       INSERT INTO settings (\`key\`, \`value\`, \`group\`) VALUES

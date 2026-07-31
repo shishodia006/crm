@@ -1,6 +1,10 @@
 import { one, q, run } from '../db/pool.js';
 import { ok, fail } from '../utils/response.js';
-import { syncGoogleSheetLeads, disconnectGoogleSheets } from '../services/googleSheets.service.js';
+import {
+  syncAllGoogleSheetConnections, disconnectGoogleSheets,
+  listGoogleSheetConnections, createGoogleSheetConnection,
+  updateGoogleSheetConnection, deleteGoogleSheetConnection, syncGoogleSheetConnection,
+} from '../services/googleSheets.service.js';
 import { verifyAndActivateShopify, syncShopifyLeads, disconnectShopify } from '../services/shopify.service.js';
 import { verifyAndActivateHubspot, syncHubspotLeads, disconnectHubspot } from '../services/hubspot.service.js';
 import { syncSalesforceLeads, disconnectSalesforce } from '../services/salesforce.service.js';
@@ -23,7 +27,7 @@ const CATALOG_BY_SLUG = Object.fromEntries(APP_CATALOG.map((a) => [a.slug, a]));
 // google_sheets/salesforce are oauthOnly — connect happens via the browser
 // redirect flow in public.controller.js, not this JSON endpoint.
 const REAL_INTEGRATIONS = {
-  google_sheets: { oauthOnly: true, sync: syncGoogleSheetLeads, disconnect: disconnectGoogleSheets },
+  google_sheets: { oauthOnly: true, sync: syncAllGoogleSheetConnections, disconnect: disconnectGoogleSheets },
   salesforce: { oauthOnly: true, sync: syncSalesforceLeads, disconnect: disconnectSalesforce },
   shopify: { connect: verifyAndActivateShopify, sync: syncShopifyLeads, disconnect: disconnectShopify },
   hubspot: { connect: verifyAndActivateHubspot, sync: syncHubspotLeads, disconnect: disconnectHubspot },
@@ -99,4 +103,44 @@ export async function sync(req, res) {
   }
   await run('UPDATE integrations SET last_sync=NOW() WHERE id=?', [existing.id]);
   ok(res, null, `${app.name} synced.`);
+}
+
+// Google Sheets is the one lead source where a company can configure more than
+// one live connection (multiple spreadsheets, each its own Lead Source) instead
+// of a single provider-wide credential — these routes manage that list directly
+// rather than going through the generic connect/disconnect/sync-by-slug flow above.
+export async function listGoogleSheets(req, res) {
+  ok(res, { connections: await listGoogleSheetConnections(req.companyId) });
+}
+
+export async function createGoogleSheet(req, res) {
+  try {
+    const result = await createGoogleSheetConnection(req.companyId, req.body || {});
+    ok(res, result, 'Sheet added.');
+  } catch (err) {
+    fail(res, err.message, 422);
+  }
+}
+
+export async function updateGoogleSheet(req, res) {
+  try {
+    await updateGoogleSheetConnection(req.companyId, Number(req.params.id), req.body || {});
+    ok(res, null, 'Sheet updated.');
+  } catch (err) {
+    fail(res, err.message, 422);
+  }
+}
+
+export async function deleteGoogleSheet(req, res) {
+  await deleteGoogleSheetConnection(req.companyId, Number(req.params.id));
+  ok(res, null, 'Sheet removed.');
+}
+
+export async function syncGoogleSheet(req, res) {
+  try {
+    const summary = await syncGoogleSheetConnection(req.companyId, Number(req.params.id), req);
+    ok(res, summary, `Synced ${summary.imported} new lead(s).`);
+  } catch (err) {
+    fail(res, err.message, 422);
+  }
 }

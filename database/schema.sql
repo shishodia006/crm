@@ -62,6 +62,25 @@ CREATE TABLE IF NOT EXISTS `lead_sources` (
   `created_at`  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- One company-wide Google OAuth connection (tokens live in company_settings,
+-- see googleSheets.service.js) can back many individual spreadsheets — each
+-- row here is one sheet a company has chosen to sync leads from, and each
+-- gets its own `lead_sources` row (source_id) so Sources analytics/health
+-- are tracked per-sheet instead of lumped into one shared "Google Sheets" bucket.
+CREATE TABLE IF NOT EXISTS `google_sheet_connections` (
+  `id`              INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  `company_id`      INT UNSIGNED NOT NULL,
+  `source_id`       INT UNSIGNED NOT NULL,
+  `name`            VARCHAR(150) NOT NULL,
+  `sheet_id`        VARCHAR(120) NOT NULL,
+  `range`           VARCHAR(60) NOT NULL DEFAULT 'A1:Z10000',
+  `last_synced_at`  DATETIME DEFAULT NULL,
+  `created_at`      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at`      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  FOREIGN KEY (`company_id`) REFERENCES `companies`(`id`) ON DELETE CASCADE,
+  FOREIGN KEY (`source_id`)  REFERENCES `lead_sources`(`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 -- ============================================================
 -- TAGS
 -- ============================================================

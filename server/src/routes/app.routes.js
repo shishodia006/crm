@@ -184,6 +184,11 @@ router.get('/settings/apps', adminOnly, asyncRoute(thirdPartyApps.index));
 router.post('/settings/apps/:slug/connect', adminOnly, asyncRoute(thirdPartyApps.connect));
 router.post('/settings/apps/:slug/disconnect', adminOnly, asyncRoute(thirdPartyApps.disconnect));
 router.post('/settings/apps/:slug/sync', adminOnly, asyncRoute(thirdPartyApps.sync));
+router.get('/settings/apps/google-sheets/connections', adminOnly, asyncRoute(thirdPartyApps.listGoogleSheets));
+router.post('/settings/apps/google-sheets/connections', adminOnly, asyncRoute(thirdPartyApps.createGoogleSheet));
+router.put('/settings/apps/google-sheets/connections/:id', adminOnly, asyncRoute(thirdPartyApps.updateGoogleSheet));
+router.delete('/settings/apps/google-sheets/connections/:id', adminOnly, asyncRoute(thirdPartyApps.deleteGoogleSheet));
+router.post('/settings/apps/google-sheets/connections/:id/sync', adminOnly, asyncRoute(thirdPartyApps.syncGoogleSheet));
 router.get('/settings/pipeline', adminOnly, asyncRoute(settings.getPipelineStages));
 router.post('/settings/pipeline', adminOnly, asyncRoute(settings.savePipelineStages));
 
