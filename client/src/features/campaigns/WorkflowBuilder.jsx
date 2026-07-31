@@ -624,6 +624,15 @@ function NodeConfigPanel({ node, onClose, onChange, msgTemplates, setMsgTemplate
                 No {data.stepType} templates.{isWaRcs ? ' Click "Sync from Anantya" above.' : ' Create in Settings → Templates.'}
               </div>
             )}
+            {/* template_id is set but doesn't match anything in the current valid
+                list — it was deleted/archived on Anantya's side since this step was
+                built. Flag it here instead of letting the send silently fail later. */}
+            {data.template_id && !selectedTpl && (
+              <div style={{ fontSize: 10, color: '#b91c1c', marginTop: 4, fontWeight: 600 }}>
+                <i className="bi bi-x-octagon me-1" />
+                This template no longer exists{isWaRcs ? ' on Anantya' : ''} — please select another one.
+              </div>
+            )}
             {/* Body preview */}
             {selectedTpl?.body && (
               <div style={{
@@ -986,6 +995,21 @@ function BuilderCanvas({ initialNodes, initialEdges, msgTemplates, setMsgTemplat
 
   const handleSave = async () => {
     if (!nodes.length) { toast('Add at least one step before saving.', 'warning'); return; }
+    // Block saving a step whose picked template was deleted/archived on
+    // Anantya's side since this workflow was built — otherwise it saves fine
+    // here and only fails at actual send time in production.
+    const brokenTpl = nodes.find(n => {
+      const d = n.data;
+      if (!['email', 'whatsapp', 'sms', 'rcs'].includes(d.stepType) || !d.template_id) return false;
+      return !msgTemplates.some(t => String(t.id) === String(d.template_id)
+        && t.channel === d.stepType
+        && (d.integration_account_id ? String(t.integration_account_id) === String(d.integration_account_id) : !t.integration_account_id));
+    });
+    if (brokenTpl) {
+      toast(`"${brokenTpl.data.label || STEP_META[brokenTpl.data.stepType]?.label}" step's template no longer exists — please select another one before saving.`, 'danger');
+      setSelectedId(brokenTpl.id);
+      return;
+    }
     setSaving(true);
     try {
       const steps = nodes.map((n, i) => {

@@ -363,7 +363,15 @@ export async function advanceEnrollment(enrollmentId, nextStepId, result, depth 
   const nextStep = await one('SELECT type,delay_value FROM workflow_steps WHERE id=? LIMIT 1', [nextStepId]);
   const immediateTypes = ['email','whatsapp','rcs','sms','send_email','send_whatsapp','send_rcs','send_sms','multi_send','assign_agent','create_task','task','move_pipeline','tag_lead','exit','condition'];
   if (nextStep && Number(nextStep.delay_value || 0) === 0 && immediateTypes.includes(nextStep.type) && depth < MAX_CHAIN) {
-    const enrollment = await one('SELECT * FROM lead_enrollments WHERE id=? LIMIT 1', [enrollmentId]);
+    // executeWorkflowStep() (and everything it calls) reads enrollment.enrollment_id,
+    // matching processDue()'s aliased query — a plain `SELECT *` here returns `id`
+    // instead, leaving enrollment.enrollment_id undefined for every step after the
+    // first in a zero-delay chain, which mysql2 then rejects as an invalid bind
+    // parameter ("Bind parameters must not contain undefined").
+    const enrollment = await one(
+      'SELECT id AS enrollment_id, lead_id, campaign_id, current_step_id, next_execute_at, status FROM lead_enrollments WHERE id=? LIMIT 1',
+      [enrollmentId]
+    );
     if (enrollment && enrollment.status === 'active') {
       await executeWorkflowStep(enrollment, depth + 1);
     }
