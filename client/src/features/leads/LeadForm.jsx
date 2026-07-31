@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { api } from '../../services/api.js';
 import { useToast } from '../../hooks/useToast.js';
 import LoadingBox from '../../components/common/LoadingBox.jsx';
+import PhoneField from '../../components/common/PhoneField.jsx';
 
 const BLANK = {
   name: '', email: '', mobile: '', company: '', designation: '',
@@ -111,7 +112,10 @@ export default function LeadForm() {
             <div className="row g-3">
               {field('Full Name', 'name', 'text', true)}
               {field('Email', 'email', 'email')}
-              {field('Mobile', 'mobile')}
+              <div className="col-md-6">
+                <label className="form-label">Mobile</label>
+                <PhoneField value={form.mobile} onChange={(v) => setForm((p) => ({ ...p, mobile: v }))} />
+              </div>
               {field('Company', 'company')}
               {field('Designation', 'designation')}
               {field('Industry', 'industry')}

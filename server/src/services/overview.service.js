@@ -131,6 +131,60 @@ export async function actionRequired(companyId) {
   };
 }
 
+// actionRequired() only looks at `deals`, and a deal only ever gets created once a
+// lead is manually moved to "Qualified" (see leads.controller.js `update()`) — most
+// accounts work leads without ever touching that status, so `deals` stays almost
+// empty and the Dashboard's "Today's Priority"/"Leads Needing Action" cards read as
+// permanently empty even with thousands of active leads. This layers in leads that
+// don't have a deal yet (so nothing is double-counted) and are stalling, giving
+// those dashboard widgets something real to say. The Stalled Deals Watchlist report
+// and the AI analyst context both call actionRequired() directly and intentionally
+// stay deal-only — don't redirect them to this.
+export async function todaysPriority(companyId) {
+  const [dealResult, leadRows] = await Promise.all([
+    actionRequired(companyId),
+    q(
+      `SELECT l.id, l.name, l.company, l.status, l.updated_at
+       FROM leads l
+       WHERE l.company_id=? AND l.is_duplicate=0 AND l.do_not_contact=0
+         AND l.status NOT IN ('won','lost','unsubscribed','invalid')
+         AND NOT EXISTS (SELECT 1 FROM deals d WHERE d.lead_id=l.id)
+       ORDER BY l.updated_at ASC
+       LIMIT 30`,
+      [companyId]
+    )
+  ]);
+
+  const now = Date.now();
+  const STATUS_LABEL = { new: 'New', contacted: 'Contacted', qualified: 'Qualified', proposal: 'Proposal', negotiation: 'Negotiation' };
+  const leadItems = leadRows.map((r) => {
+    const daysStalled = Math.max(0, Math.floor((now - new Date(r.updated_at).getTime()) / 86400000));
+    const badge = daysStalled > 7 ? 'Stalled' : daysStalled >= 3 ? 'Waiting' : 'Pending';
+    const stageLabel = STATUS_LABEL[r.status] || r.status;
+    return {
+      id: `lead-${r.id}`,
+      kind: 'lead',
+      name: r.company || r.name,
+      contact: r.name,
+      value: 0,
+      stage: stageLabel,
+      reason: `${stageLabel} lead · ${daysStalled}d no follow-up`,
+      badge,
+      daysStalled,
+      nextMeeting: null
+    };
+  });
+
+  const dealItems = dealResult.items.map((i) => ({ ...i, id: `deal-${i.id}`, kind: 'deal' }));
+  const items = [...dealItems, ...leadItems].sort((a, b) => b.daysStalled - a.daysStalled);
+  const needingAction = items.filter((i) => i.badge !== 'On Track');
+  return {
+    items,
+    count: needingAction.length,
+    atRiskValue: needingAction.reduce((sum, i) => sum + i.value, 0)
+  };
+}
+
 export async function leadSourceTrends(companyId) {
   const rows = await q(
     `SELECT ls.name, COUNT(l.id) AS total,

@@ -4,7 +4,7 @@ import { parse as parseCsv } from 'csv-parse/sync';
 import { one, q, run, updateById } from '../db/pool.js';
 import { ok, fail } from '../utils/response.js';
 import { csvEscape } from '../utils/helpers.js';
-import { listLeads, processLead, leadTimeline, normalizeImportRow, findLeadByEmailOrMobile } from '../services/lead.service.js';
+import { listLeads, processLead, leadTimeline, normalizeImportRow, findLeadByEmailOrMobile, normalizeMobile } from '../services/lead.service.js';
 import { enrollLead } from '../services/drip.service.js';
 import { addScoreEvent } from '../services/score.service.js';
 
@@ -81,6 +81,16 @@ export async function update(req, res) {
   for (const field of allowed) {
     if (req.body[field] !== undefined) data[field] = req.body[field] === '' ? null : req.body[field];
   }
+
+  // PATCH used to write `mobile` straight through with no normalization — unlike
+  // lead creation (validateLead), an edited number could end up saved without a
+  // country code, and Anantya silently rejects WhatsApp/RCS sends to those.
+  if (data.mobile != null) {
+    const { value, valid } = normalizeMobile(data.mobile);
+    if (valid === false) return fail(res, 'Invalid mobile number — include the country code (e.g. +91XXXXXXXXXX).', 422);
+    data.mobile = value;
+  }
+
   const leadId = Number(req.params.id);
   const exists = await one('SELECT id,name,company,source_id,status FROM leads WHERE id=? AND company_id=? LIMIT 1', [leadId, req.companyId]);
   if (!exists) return fail(res, 'Lead not found.', 404);

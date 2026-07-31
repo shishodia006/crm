@@ -301,17 +301,21 @@ export default function LeadDetail() {
   const [loading, setLoading]       = useState(true);
   const [modalEnrollment, setModalEnrollment] = useState(null);
   const [enrollSelect, setEnrollSelect] = useState('');
+  const [enrollStatus, setEnrollStatus] = useState('idle'); // idle | enrolling | done
 
-  const reload = useCallback(() => {
-    setLoading(true);
-    api.get(`/api/leads/${id}`)
+  // `silent` skips the page-level loading flag — used after actions like Enroll
+  // that already show their own inline feedback, so refreshing the enrollments
+  // list doesn't also blank the whole page behind a full-screen spinner.
+  const reload = useCallback((silent = false) => {
+    if (!silent) setLoading(true);
+    return api.get(`/api/leads/${id}`)
       .then(d => {
         setLead(d.lead);
         setCampaigns(d.campaigns ?? []);
         setEnrollments(d.enrollments ?? []);
       })
       .catch((err) => { toast(err.message || 'Could not load this lead.', 'danger'); navigate('/leads'); })
-      .finally(() => setLoading(false));
+      .finally(() => { if (!silent) setLoading(false); });
   }, [id]);
 
   useEffect(() => { reload(); }, [reload]);
@@ -326,13 +330,19 @@ export default function LeadDetail() {
   };
 
   const handleEnroll = async () => {
-    if (!enrollSelect) return;
+    if (!enrollSelect || enrollStatus === 'enrolling') return;
+    setEnrollStatus('enrolling');
     try {
       await api.post(`/api/leads/${id}/enroll`, { campaign_id: enrollSelect });
       toast('Lead enrolled.', 'success');
       setEnrollSelect('');
-      reload();
-    } catch (err) { toast(err.message, 'danger'); }
+      await reload(true);
+      setEnrollStatus('done');
+      setTimeout(() => setEnrollStatus('idle'), 1500);
+    } catch (err) {
+      toast(err.message, 'danger');
+      setEnrollStatus('idle');
+    }
   };
 
   if (loading) return <LoadingBox />;
@@ -496,11 +506,21 @@ export default function LeadDetail() {
               <div className="card border-0 shadow-sm h-100">
                 <div className="card-body d-flex flex-column justify-content-center">
                   <h6 className="fw-semibold mb-3">Enroll in Campaign</h6>
-                  <select className="form-select form-select-sm mb-2" value={enrollSelect} onChange={e => setEnrollSelect(e.target.value)}>
+                  <select className="form-select form-select-sm mb-2" value={enrollSelect} onChange={e => setEnrollSelect(e.target.value)} disabled={enrollStatus !== 'idle'}>
                     <option value="">— Select Campaign —</option>
                     {campaigns.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
                   </select>
-                  <button className="btn-crm btn-crm-sm w-100 justify-content-center" onClick={handleEnroll}>Enroll</button>
+                  <button
+                    className={`btn-crm btn-crm-sm w-100 justify-content-center${enrollStatus === 'done' ? ' crm-btn-success-flash' : ''}`}
+                    disabled={!enrollSelect || enrollStatus !== 'idle'}
+                    onClick={handleEnroll}
+                  >
+                    {enrollStatus === 'enrolling'
+                      ? <><span className="spinner-border spinner-border-sm me-1" />Enrolling…</>
+                      : enrollStatus === 'done'
+                        ? <><i className="bi bi-check-circle-fill me-1" />Enrolled!</>
+                        : 'Enroll'}
+                  </button>
                 </div>
               </div>
             </div>

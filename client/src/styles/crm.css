@@ -3,6 +3,21 @@
    All component styles. Zero inline styles in components.
    ============================================================ */
 
+/* ── Global font ────────────────────────────────────────── */
+/* Bootstrap resolves headings/buttons/form controls through empty per-component
+   variables (e.g. `.btn{ --bs-btn-font-family: ; font-family:var(--bs-btn-font-family) }`)
+   that fall back to the browser's own default rather than truly inheriting from
+   body, so redefining --bs-font-sans-serif alone doesn't reach them. !important
+   on the actual elements is what the rest of this file already uses to beat
+   Bootstrap's specificity, so do the same here. */
+:root {
+  --bs-font-sans-serif: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+}
+body, h1, h2, h3, h4, h5, h6, button, input, select, textarea,
+.btn, .form-control, .form-select {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif !important;
+}
+
 /* ── Typography helpers ────────────────────────────────── */
 .text-10 { font-size: 10px !important; }
 .text-11 { font-size: 11px !important; }
@@ -60,6 +75,19 @@
   transition: background 0.15s;
 }
 .btn-crm-outline:hover { background: #ede9fe; color: #5b21b6; }
+
+/* Brief green "it worked" flash for actions like Enroll that otherwise give
+   no visible confirmation beyond a toast easy to miss. */
+.crm-btn-success-flash {
+  background: #16a34a !important;
+  animation: crm-btn-pop 0.35s ease;
+}
+.btn-crm:disabled.crm-btn-success-flash { opacity: 1; cursor: default; }
+@keyframes crm-btn-pop {
+  0%   { transform: scale(1); }
+  40%  { transform: scale(1.05); }
+  100% { transform: scale(1); }
+}
 
 /* ── Fancy data table (Leads, Templates) ──────────────────── */
 .crm-table-fancy thead th {
@@ -584,12 +612,36 @@
   border-top: 1px solid #f1f5f9;
   display: flex; gap: 0.5rem;
 }
-.crm-mobile-prefix {
-  position: absolute; left: 10px; top: 50%;
-  transform: translateY(-50%);
-  font-size: 12px; font-weight: 600; color: #6b7280;
-  pointer-events: none;
+/* ── Phone field (country code select + national number) ── */
+.crm-phone-field { position: relative; }
+.crm-phone-field-row { display: flex; gap: 6px; }
+.crm-phone-country-btn {
+  flex-shrink: 0; display: flex; align-items: center; gap: 4px;
+  font-size: 13px; font-weight: 600; color: #374151;
+  border-radius: 8px; border: 1.5px solid #e5e7eb;
+  padding: 0.5rem 0.6rem; background: #f9fafb; cursor: pointer;
+  transition: border-color 0.2s;
 }
+.crm-phone-country-btn:hover { border-color: #c4b5fd; }
+.crm-phone-number-input { flex: 1; min-width: 0; }
+.crm-phone-country-dropdown {
+  position: absolute; z-index: 20; top: calc(100% + 4px);
+  max-width: calc(100vw - 20px);
+  background: #fff; border-radius: 10px; border: 1px solid #e5e7eb;
+  box-shadow: 0 12px 32px rgba(0,0,0,0.14);
+  padding: 8px;
+}
+.crm-phone-country-list { max-height: 220px; overflow-y: auto; }
+.crm-phone-country-option {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  width: 100%; padding: 0.45rem 0.6rem; margin-bottom: 2px;
+  border: none; border-radius: 8px; background: transparent;
+  font-size: 12.5px; color: #1e293b; text-align: left; cursor: pointer;
+  transition: background 0.12s;
+}
+.crm-phone-country-option:hover { background: #f8fafc; }
+.crm-phone-country-option.active { background: #7c3aed; color: #fff; }
+.crm-phone-country-option.active span { color: #fff; }
 
 /* ── Login page ────────────────────────────────────────── */
 .crm-login-bg {
@@ -927,7 +979,6 @@
 .crm-collapse-icon{ font-size: 13px; min-width: 18px; }
 
 /* ── Mobile number prefix input ────────────────────────── */
-.crm-mobile-input { padding-left: 36px !important; }
 
 /* ── Misc color utility ────────────────────────────────── */
 .text-silver { color: #aaa !important; }

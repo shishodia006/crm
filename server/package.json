@@ -7,7 +7,8 @@
   "scripts": {
     "start": "node --env-file=.env server.js",
     "dev": "node --env-file=.env --watch server.js",
-    "cron": "node --env-file=.env server.js --cron"
+    "cron": "node --env-file=.env server.js --cron",
+    "backfill:mobile": "node --env-file=.env scripts/backfillMobileCountryCode.js"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",

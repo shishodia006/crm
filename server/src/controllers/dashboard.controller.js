@@ -2,7 +2,7 @@ import { q, one, scalar } from '../db/pool.js';
 import { ok } from '../utils/response.js';
 import { allActiveCompanies } from '../services/company.service.js';
 import {
-  pipelineSnapshot, businessHealth, actionRequired, leadSourceTrends,
+  pipelineSnapshot, businessHealth, todaysPriority, leadSourceTrends,
   monthlyGoals, dripSequences, liveActivity
 } from '../services/overview.service.js';
 
@@ -82,7 +82,7 @@ export async function index(req, res) {
     scalar("SELECT COUNT(*) FROM leads WHERE company_id=? AND status='won' AND won_at <= DATE_SUB(NOW(), INTERVAL 30 DAY)", [req.companyId]),
     pipelineSnapshot(req.companyId),
     businessHealth(req.companyId),
-    actionRequired(req.companyId),
+    todaysPriority(req.companyId),
     leadSourceTrends(req.companyId),
     monthlyGoals(req.companyId),
     dripSequences(req.companyId),

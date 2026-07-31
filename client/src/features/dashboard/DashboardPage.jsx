@@ -58,7 +58,9 @@ function ActionRow({ item }) {
         <div className="crm-action-sub text-truncate">{item.reason}</div>
       </div>
       <div className="text-end flex-shrink-0">
-        <div className="crm-action-value">{money(item.value)}</div>
+        {item.kind === 'lead'
+          ? <div className="crm-action-value text-muted-3 text-11">No deal yet</div>
+          : <div className="crm-action-value">{money(item.value)}</div>}
         <span className={`badge badge-crm badge-${slug(item.badge)}`}>{item.badge}</span>
       </div>
     </div>

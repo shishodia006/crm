@@ -50,6 +50,19 @@ export function normalizeImportRow(row) {
   return normalized;
 }
 
+// Anantya (WhatsApp/RCS) only ever accepts a number with its country code
+// included — a bare 10-digit local number is assumed to be Indian (the app's
+// only country until now) and gets `+91` prepended; anything else must already
+// carry a `+<countrycode>` prefix (which is exactly what PhoneField.jsx sends
+// from both lead forms) or it's rejected rather than silently stored wrong.
+export function normalizeMobile(raw) {
+  let mobile = String(raw || '').trim().replace(/[^\d+]/g, '');
+  if (!mobile) return { value: null, valid: null };
+  if (/^\d{10}$/.test(mobile)) mobile = `+91${mobile}`;
+  if (!/^\+[1-9]\d{7,14}$/.test(mobile)) return { value: mobile, valid: false };
+  return { value: mobile, valid: true };
+}
+
 export function validateLead(data, req) {
   const errors = {};
   const clean = {};
@@ -71,19 +84,13 @@ export function validateLead(data, req) {
     clean.email_valid = null;
   }
 
-  let mobile = String(data.mobile || data.phone || data.phone_number || '').trim().replace(/[^\d+]/g, '');
-  if (mobile) {
-    if (/^\d{10}$/.test(mobile)) mobile = `+91${mobile}`;
-    if (!/^\+[1-9]\d{7,14}$/.test(mobile)) {
-      errors.mobile = 'Invalid mobile number.';
-      clean.mobile_valid = 0;
-    } else {
-      clean.mobile = mobile;
-      clean.mobile_valid = 1;
-    }
+  const { value: mobile, valid: mobileValid } = normalizeMobile(data.mobile || data.phone || data.phone_number);
+  if (mobile && !mobileValid) {
+    errors.mobile = 'Invalid mobile number.';
+    clean.mobile_valid = 0;
   } else {
-    clean.mobile = null;
-    clean.mobile_valid = null;
+    clean.mobile = mobile;
+    clean.mobile_valid = mobileValid;
   }
 
   if (!clean.email && !clean.mobile) errors.contact = 'Email or mobile is required.';

@@ -8,6 +8,7 @@ import { LogoMark } from '../common/Logo.jsx';
 import { PageHeaderContext } from '../../context/PageHeaderContext.jsx';
 import { playNotificationSound } from '../../utils/sound.js';
 import GreetingToast from '../common/GreetingToast.jsx';
+import PhoneField from '../common/PhoneField.jsx';
 
 /* ── Page title map ─────────────────────────────────────── */
 const PAGE_TITLES = {
@@ -352,11 +353,7 @@ function NewLeadDrawer({ open, onClose, onCreated }) {
             </div>
             <div className="col-6">
               <label className="crm-label">Mobile</label>
-              <div className="position-relative">
-                <span className="crm-mobile-prefix">+91</span>
-                <input name="mobile" value={form.mobile} onChange={set} placeholder="XXXXXXXXXX"
-                  className="crm-input crm-mobile-input" />
-              </div>
+              <PhoneField value={form.mobile} onChange={(v) => setForm((p) => ({ ...p, mobile: v }))} />
             </div>
           </div>
           <div className="row g-3 mb-3">
