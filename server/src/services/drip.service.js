@@ -193,6 +193,10 @@ export async function executeWorkflowStep(enrollment, depth = 0) {
 
   } else if (step.type === 'condition') {
     const nextStepId = (await evaluateCondition(step, lead, ad, enrollment)) ? step.yes_next_id : step.no_next_id;
+    await run(
+      'UPDATE enrollment_step_logs SET status=?, executed_at=NOW(), result=? WHERE enrollment_id=? AND step_id=?',
+      ['executed', JSON.stringify(result), enrollment.enrollment_id, step.id]
+    );
     await advanceEnrollment(enrollment.enrollment_id, nextStepId, result, depth);
     return;
 
@@ -207,6 +211,10 @@ export async function executeWorkflowStep(enrollment, depth = 0) {
   } else if (step.type === 'tag_lead') {
     await applyTagToLead(lead.id, ad.tag_name);
   } else if (step.type === 'exit') {
+    await run(
+      'UPDATE enrollment_step_logs SET status=?, executed_at=NOW(), result=? WHERE enrollment_id=? AND step_id=?',
+      ['executed', JSON.stringify(result), enrollment.enrollment_id, step.id]
+    );
     await run("UPDATE lead_enrollments SET status='completed', exit_reason='workflow_completed', completed_at=NOW() WHERE id=?", [enrollment.enrollment_id]);
     return;
   }

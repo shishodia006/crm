@@ -16,6 +16,7 @@ export function ConfirmProvider({ children }) {
         confirmLabel: options.confirmLabel || 'Confirm',
         cancelLabel: options.cancelLabel || 'Cancel',
         danger: options.danger !== false,
+        hideCancel: options.hideCancel === true,
       });
     });
   }, []);
@@ -79,7 +80,9 @@ export function ConfirmProvider({ children }) {
               />
             )}
             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-              <button type="button" className="btn btn-outline-secondary btn-sm" onClick={() => close(cancelValue)}>{state.cancelLabel}</button>
+              {!state.hideCancel && (
+                <button type="button" className="btn btn-outline-secondary btn-sm" onClick={() => close(cancelValue)}>{state.cancelLabel}</button>
+              )}
               <button
                 type="button"
                 className={state.kind === 'confirm' && state.danger ? 'btn btn-danger btn-sm' : 'btn-crm btn-crm-sm'}

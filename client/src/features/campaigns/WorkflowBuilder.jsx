@@ -1039,7 +1039,7 @@ function BuilderCanvas({ initialNodes, initialEdges, msgTemplates, setMsgTemplat
       await onSave(steps, connections, activateNow);
       await confirm(describeWorkflow(nodes, edges, msgTemplates, agents), {
         title: 'Saved — here\'s what this automation does',
-        confirmLabel: 'Got it', cancelLabel: 'Got it', danger: false,
+        confirmLabel: 'Got it', danger: false, hideCancel: true,
       });
     } finally {
       setSaving(false);
@@ -1049,7 +1049,7 @@ function BuilderCanvas({ initialNodes, initialEdges, msgTemplates, setMsgTemplat
   const previewWorkflow = () => {
     confirm(describeWorkflow(nodes, edges, msgTemplates, agents), {
       title: 'What this automation does',
-      confirmLabel: 'Close', cancelLabel: 'Close', danger: false,
+      confirmLabel: 'Close', danger: false, hideCancel: true,
     });
   };
 

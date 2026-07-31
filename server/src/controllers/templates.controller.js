@@ -17,6 +17,10 @@ export async function index(req, res) {
   const where = ['1=1'];
   const params = [];
   where.push('t.company_id=?'); params.push(req.companyId);
+  // Archived = deleted/unapproved on Anantya's side (see syncWhatsApp below) —
+  // hidden by default so stale templates don't linger in pickers/lists;
+  // ?include_archived=1 opts back in for anyone who needs to see them.
+  if (req.query.include_archived !== '1') where.push("t.status<>'archived'");
   if (req.query.channel) { where.push('t.channel=?'); params.push(req.query.channel); }
   if (req.query.account_id === 'none') { where.push('t.integration_account_id IS NULL'); }
   else if (req.query.account_id) { where.push('t.integration_account_id=?'); params.push(Number(req.query.account_id)); }
@@ -93,8 +97,15 @@ export async function syncWhatsApp(req, res) {
   const raw = data.dataObj || data.DataObj || data.data || [];
   const saveMode = req.query.save === '1'; // explicit ?save=1 required to upsert into DB
 
+  // Anantya's GetTemplates response doesn't obviously carry a distinguishing
+  // whatsapp-vs-rcs field on each template (or we haven't found it yet) — log
+  // one full sample object per sync so the real field names are visible in
+  // the server logs next time this runs, instead of guessing blind.
+  if (raw.length) console.log(`[anantya][sync][${channel}] sample template object:`, JSON.stringify(raw[0]));
+
   let imported = 0, skipped = 0;
   const result = [];
+  const syncedIds = [];
 
   for (const t of raw) {
     // Extract body — prefer version with {{N}} placeholders
@@ -130,6 +141,7 @@ export async function syncWhatsApp(req, res) {
     result.push({ waId, name, status, body: body.slice(0, 200), variableCount });
 
     if (!saveMode || !waId) { skipped++; continue; }
+    syncedIds.push(waId);
 
     // Upsert: if this template was already synced for this exact channel AND account, update it;
     // else insert fresh (so "sync as RCS" or a different account doesn't clobber an existing row
@@ -152,8 +164,25 @@ export async function syncWhatsApp(req, res) {
     imported++;
   }
 
+  // Anantya is the source of truth: a template that's synced here but no
+  // longer comes back from GetTemplates was deleted/unapproved on their side.
+  // Archive it (not hard-delete — communications/workflow_steps still
+  // reference it for history) so it stops appearing in pickers/lists.
+  let archived = 0;
+  if (saveMode && syncedIds.length) {
+    const placeholders = syncedIds.map(() => '?').join(',');
+    const archiveResult = await run(
+      `UPDATE templates SET status='archived', updated_at=NOW()
+       WHERE company_id=? AND channel=? AND integration_account_id <=> ? AND status<>'archived'
+         AND wa_template_id IS NOT NULL AND wa_template_id NOT IN (${placeholders})`,
+      [req.companyId, channel, accountId, ...syncedIds]
+    );
+    archived = archiveResult.affectedRows || 0;
+  }
+
   const forAccount = account ? ` for ${account.name}` : '';
-  ok(res, { imported, skipped, total: raw.length, templates: result }, `Synced ${imported} templates from Anantya as ${channel}${forAccount}.`);
+  const archivedNote = archived ? ` (${archived} removed on Anantya's side archived here too)` : '';
+  ok(res, { imported, skipped, archived, total: raw.length, templates: result }, `Synced ${imported} templates from Anantya as ${channel}${forAccount}.${archivedNote}`);
 }
 
 export async function show(req, res) {
