@@ -1,6 +1,7 @@
 import { one, q, run, scalar } from '../db/pool.js';
 import { ok, fail } from '../utils/response.js';
 import { getIntegrationAccount } from '../services/comm.service.js';
+import { explainAnantyaError } from '../utils/anantyaError.js';
 
 // Build the variables JSON column value from an explicit count or by counting {{N}} in body
 function buildVariablesJson(rawCount, body = '') {
@@ -87,7 +88,7 @@ export async function syncWhatsApp(req, res) {
     return fail(res, `Anantya returned non-JSON (HTTP ${response.status}).`, 502, text.slice(0, 300));
   }
   const success = data.isSuccess ?? data.IsSuccess ?? response.ok;
-  if (!success) return fail(res, data.message || data.Message || 'Anantya error.', response.status || 502);
+  if (!success) return fail(res, explainAnantyaError(data.message || data.Message), response.status || 502);
 
   const raw = data.dataObj || data.DataObj || data.data || [];
   const saveMode = req.query.save === '1'; // explicit ?save=1 required to upsert into DB

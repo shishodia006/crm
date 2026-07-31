@@ -149,14 +149,21 @@ export async function pause(req, res) {
 export async function builder(req, res) {
   const campaign = await one('SELECT * FROM campaigns WHERE id=? AND company_id=? LIMIT 1', [Number(req.params.id), req.companyId]);
   if (!campaign) return fail(res, 'Campaign not found.', 404);
-  const [templates, agents, stages, workflowSteps, integrationAccounts] = await Promise.all([
+  const [templates, agents, stages, workflowSteps, integrationAccounts, activeEnrollments] = await Promise.all([
     q("SELECT id,name,channel,subject,body,wa_template_id,integration_account_id FROM templates WHERE status!='archived' AND company_id=? ORDER BY channel,name", [req.companyId]),
     q("SELECT u.id,u.name FROM users u JOIN company_users cu ON cu.user_id=u.id WHERE cu.company_id=? AND u.role IN ('agent','manager') AND u.is_active=1 ORDER BY u.name", [req.companyId]),
     q('SELECT id,name FROM pipeline_stages WHERE is_active=1 ORDER BY stage_order'),
     q('SELECT * FROM workflow_steps WHERE campaign_id=? ORDER BY step_order ASC', [campaign.id]),
-    q('SELECT id,name,provider,channel,external_account_id FROM integration_accounts WHERE company_id=? AND is_active=1 ORDER BY provider,name', [req.companyId])
+    q('SELECT id,name,provider,channel,external_account_id FROM integration_accounts WHERE company_id=? AND is_active=1 ORDER BY provider,name', [req.companyId]),
+    // Editing an already-live campaign deletes and recreates every workflow_steps
+    // row (see saveSteps below), and lead_enrollments.current_step_id is
+    // ON DELETE SET NULL — any lead already mid-sequence loses its place and
+    // gets marked completed('step_not_found') on its next tick. The builder
+    // needs this count to warn before that happens, since it was previously
+    // silent.
+    scalar("SELECT COUNT(*) FROM lead_enrollments WHERE campaign_id=? AND status='active'", [campaign.id])
   ]);
-  ok(res, { campaign, templates, agents, stages, workflowSteps, integrationAccounts });
+  ok(res, { campaign, templates, agents, stages, workflowSteps, integrationAccounts, activeEnrollments: Number(activeEnrollments || 0) });
 }
 
 export async function saveSteps(req, res) {
@@ -201,10 +208,21 @@ export async function saveSteps(req, res) {
       );
       idMap[step.id] = Number(result.insertId);
     }
+    // A step only ever has one next step per output (out / yes / no), so a
+    // target that already got a parent, or a source+handle that already fired
+    // a connection, must not silently be overwritten by a later duplicate in
+    // the array — that's how a stray/duplicate line from the builder used to
+    // cause an extra step to run or "Exit" to be bypassed with no visible sign.
+    const usedTargets = new Set();
+    const usedSourceHandles = new Set();
     for (const connRow of connections) {
       const fromDb = idMap[connRow.from];
       const toDb   = idMap[connRow.to];
       if (!fromDb || !toDb) continue;
+      const sourceKey = `${fromDb}:${connRow.label || 'out'}`;
+      if (usedTargets.has(toDb) || usedSourceHandles.has(sourceKey)) continue;
+      usedTargets.add(toDb);
+      usedSourceHandles.add(sourceKey);
       await run('UPDATE workflow_steps SET parent_id=? WHERE id=?', [fromDb, toDb], conn);
       if (connRow.label === 'yes') await run('UPDATE workflow_steps SET yes_next_id=? WHERE id=?', [toDb, fromDb], conn);
       else if (connRow.label === 'no') await run('UPDATE workflow_steps SET no_next_id=? WHERE id=?', [toDb, fromDb], conn);

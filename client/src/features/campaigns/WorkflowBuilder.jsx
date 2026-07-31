@@ -257,6 +257,77 @@ function autoLayout(nodes, edges) {
   return nodes.map(n => ({ ...n, position: positioned.get(n.id) || n.position }));
 }
 
+// ─── Plain-language workflow summary ────────────────────────────────
+// Builds a readable "what this automation does" description from the
+// canvas graph, since tracing a drag-and-drop flow visually to double-check
+// what was actually wired up is easy to get subtly wrong.
+function describeStep(node, msgTemplates, agents) {
+  const d = node.data;
+  const tplName = (id) => (id ? msgTemplates.find(t => String(t.id) === String(id))?.name : null);
+  const delay = Number(d.delay_value || 0) > 0 ? ` (after waiting ${d.delay_value} ${d.delay_unit || 'days'})` : '';
+  switch (d.stepType) {
+    case 'wait': return `Wait ${d.delay_value || 0} ${d.delay_unit || 'days'}`;
+    case 'email': return `Send email${tplName(d.template_id) ? ` "${tplName(d.template_id)}"` : ' (no template picked yet)'}${delay}`;
+    case 'whatsapp': return `Send WhatsApp message${tplName(d.template_id) ? ` "${tplName(d.template_id)}"` : ' (no template picked yet)'}${delay}`;
+    case 'rcs': return `Send RCS message${tplName(d.template_id) ? ` "${tplName(d.template_id)}"` : ' (no template picked yet)'}${delay}`;
+    case 'sms': return `Send SMS${tplName(d.template_id) ? ` "${tplName(d.template_id)}"` : ' (no template picked yet)'}${delay}`;
+    case 'multi_send': {
+      const channels = ['email', 'whatsapp', 'rcs', 'sms'].filter(c => d[`${c}_template_id`]);
+      return `Send ${channels.length ? channels.join(' + ') : '(no channels picked yet)'} together${delay}`;
+    }
+    case 'condition': return d.condition ? `Check if ${d.condition} ${d.condition_op || 'eq'} "${d.condition_val || ''}"` : 'Check a condition (not set up yet)';
+    case 'assign_agent': {
+      const agent = agents.find(a => String(a.id) === String(d.agent_id));
+      return `Assign the lead to ${agent ? agent.name : 'an agent (round robin)'}`;
+    }
+    case 'task': return `Create a task: "${d.task_title || 'Follow up'}"`;
+    case 'move_pipeline': return 'Move the lead to a different pipeline stage';
+    case 'tag_lead': return `Add the tag "${d.tag_name || '(not set)'}"`;
+    case 'exit': return 'Exit — the lead leaves this workflow';
+    default: return d.label || d.stepType;
+  }
+}
+
+function describeWorkflow(nodes, edges, msgTemplates, agents) {
+  if (!nodes.length) return 'This workflow is empty — add a step to get started.';
+  const byId = new Map(nodes.map(n => [n.id, n]));
+  const outByHandle = new Map(); // `${sourceId}:${handle}` -> targetId
+  edges.forEach(e => outByHandle.set(`${e.source}:${e.sourceHandle || 'out'}`, e.target));
+  const hasIncoming = new Set(edges.map(e => e.target));
+  const roots = nodes.filter(n => !hasIncoming.has(n.id));
+
+  const lines = [];
+  const visited = new Set();
+  const walk = (nodeId, indent, prefix) => {
+    if (!nodeId || visited.has(nodeId)) return;
+    visited.add(nodeId);
+    const node = byId.get(nodeId);
+    if (!node) return;
+    lines.push(`${'    '.repeat(indent)}${prefix}${describeStep(node, msgTemplates, agents)}`);
+    if (node.data.stepType === 'condition') {
+      const yesId = outByHandle.get(`${nodeId}:yes`);
+      const noId = outByHandle.get(`${nodeId}:no`);
+      if (yesId) walk(yesId, indent + 1, 'If YES → ');
+      else lines.push(`${'    '.repeat(indent + 1)}If YES → (nothing connected)`);
+      if (noId) walk(noId, indent + 1, 'If NO → ');
+      else lines.push(`${'    '.repeat(indent + 1)}If NO → workflow ends here`);
+    } else {
+      const nextId = outByHandle.get(`${nodeId}:out`);
+      if (nextId) walk(nextId, indent, '→ ');
+      else if (node.data.stepType !== 'exit') lines.push(`${'    '.repeat(indent + 1)}(workflow ends here — nothing connected next)`);
+    }
+  };
+  roots.forEach(r => walk(r.id, 0, ''));
+  // Any node never reached from a root is disconnected — flag it so it doesn't
+  // silently sit there doing nothing.
+  const orphans = nodes.filter(n => !visited.has(n.id));
+  if (orphans.length) {
+    lines.push('');
+    lines.push(`⚠ Not connected to the flow (won't run): ${orphans.map(n => describeStep(n, msgTemplates, agents)).join(', ')}`);
+  }
+  return lines.join('\n');
+}
+
 function templateToFlow(tplSteps) {
   const nodes = tplSteps.map((s, i) => ({
     id: uid(),
@@ -297,12 +368,10 @@ const StepNode = memo(({ data, selected }) => {
         userSelect: 'none',
       }}
     >
-      {!isExit && (
-        <Handle
-          type="target" position={Position.Left} id="in"
-          style={{ background: '#94a3b8', width: 10, height: 10, border: '2px solid #fff', left: -5 }}
-        />
-      )}
+      <Handle
+        type="target" position={Position.Left} id="in"
+        style={{ background: '#94a3b8', width: 10, height: 10, border: '2px solid #fff', left: -5 }}
+      />
 
       <div style={{
         display: 'flex', alignItems: 'center', gap: 8,
@@ -722,13 +791,19 @@ function NodeConfigPanel({ node, onClose, onChange, msgTemplates, setMsgTemplate
                 {data.condition === 'engagement_event' ? (
                   <select className="form-select form-select-sm" value={data.condition_val}
                     onChange={e => onChange('condition_val', e.target.value)}>
-                    <option value="">â€” Select event â€”</option>
+                    <option value="">— Select event —</option>
                     <option value="delivered">Delivered</option>
                     <option value="read">Read</option>
                     <option value="opened">Opened</option>
                     <option value="clicked">Clicked</option>
                     <option value="replied">Replied</option>
                     <option value="failed">Failed</option>
+                  </select>
+                ) : data.condition === 'stage' ? (
+                  <select className="form-select form-select-sm" value={data.condition_val}
+                    onChange={e => onChange('condition_val', e.target.value)}>
+                    <option value="">— Select stage —</option>
+                    {stages.map(s => <option key={s.id} value={s.name}>{s.name}</option>)}
                   </select>
                 ) : (
                   <input className="form-control form-control-sm" value={data.condition_val}
@@ -844,18 +919,31 @@ function BuilderCanvas({ initialNodes, initialEdges, msgTemplates, setMsgTemplat
 
   const onConnect = useCallback((params) => {
     const sh = params.sourceHandle;
-    setEdges(prev => addEdge({
-      ...params,
-      type: 'smoothstep',
-      animated: sh === 'yes',
-      style: {
-        stroke: sh === 'yes' ? '#22c55e' : sh === 'no' ? '#ef4444' : '#94a3b8',
-        strokeWidth: 2,
-      },
-      label: sh === 'yes' ? 'YES' : sh === 'no' ? 'NO' : '',
-      labelStyle: { fontSize: 10, fontWeight: 700 },
-      labelBgStyle: { fill: sh === 'yes' ? '#d1fae5' : sh === 'no' ? '#fee2e2' : '#f8fafc', fillOpacity: 1 },
-    }, prev));
+    setEdges(prev => {
+      // Every step only ever executes ONE next step, and each output dot
+      // (out / yes / no) only ever fires down one path — so a target that
+      // already has an incoming line, or a source handle that already has
+      // an outgoing line, must be replaced rather than stacked. Without
+      // this, a re-wired connection during editing left the old line saved
+      // in the background: it looked fine on screen but silently added an
+      // extra step the engine would run, or bypassed "Exit" entirely.
+      const deduped = prev.filter(e =>
+        e.target !== params.target &&
+        !(e.source === params.source && e.sourceHandle === sh)
+      );
+      return addEdge({
+        ...params,
+        type: 'smoothstep',
+        animated: sh === 'yes',
+        style: {
+          stroke: sh === 'yes' ? '#22c55e' : sh === 'no' ? '#ef4444' : '#94a3b8',
+          strokeWidth: 2,
+        },
+        label: sh === 'yes' ? 'YES' : sh === 'no' ? 'NO' : '',
+        labelStyle: { fontSize: 10, fontWeight: 700 },
+        labelBgStyle: { fill: sh === 'yes' ? '#d1fae5' : sh === 'no' ? '#fee2e2' : '#f8fafc', fillOpacity: 1 },
+      }, deduped);
+    });
   }, [setEdges]);
 
   const onDragOver = useCallback((e) => {
@@ -949,9 +1037,20 @@ function BuilderCanvas({ initialNodes, initialEdges, msgTemplates, setMsgTemplat
         label: e.sourceHandle === 'yes' ? 'yes' : e.sourceHandle === 'no' ? 'no' : '',
       }));
       await onSave(steps, connections, activateNow);
+      await confirm(describeWorkflow(nodes, edges, msgTemplates, agents), {
+        title: 'Saved — here\'s what this automation does',
+        confirmLabel: 'Got it', cancelLabel: 'Got it', danger: false,
+      });
     } finally {
       setSaving(false);
     }
+  };
+
+  const previewWorkflow = () => {
+    confirm(describeWorkflow(nodes, edges, msgTemplates, agents), {
+      title: 'What this automation does',
+      confirmLabel: 'Close', cancelLabel: 'Close', danger: false,
+    });
   };
 
   return (
@@ -967,6 +1066,14 @@ function BuilderCanvas({ initialNodes, initialEdges, msgTemplates, setMsgTemplat
           {nodes.length} node{nodes.length !== 1 ? 's' : ''} · {edges.length} edge{edges.length !== 1 ? 's' : ''}
         </span>
         <div style={{ flex: 1 }} />
+        <button
+          className="btn btn-outline-secondary btn-sm"
+          style={{ fontSize: 11 }}
+          onClick={previewWorkflow}
+          title="See a plain-language summary of this automation"
+        >
+          <i className="bi bi-chat-square-text me-1" />Summary
+        </button>
         <button
           className="btn btn-outline-secondary btn-sm"
           style={{ fontSize: 11 }}
@@ -1127,8 +1234,10 @@ export default function WorkflowBuilder() {
   const { id } = useParams();
   const navigate = useNavigate();
   const toast = useToast();
+  const confirm = useConfirm();
 
   const [campaign, setCampaign] = useState(null);
+  const [activeEnrollments, setActiveEnrollments] = useState(0);
   const [msgTemplates, setMsgTemplates] = useState([]);
   const [agents, setAgents] = useState([]);
   const [stages, setStages] = useState([]);
@@ -1149,6 +1258,7 @@ export default function WorkflowBuilder() {
         setAgents(d.agents ?? []);
         setStages(d.stages ?? []);
         setIntegrationAccounts(d.integrationAccounts ?? []);
+        setActiveEnrollments(d.activeEnrollments ?? 0);
         const ws = d.workflowSteps ?? [];
         if (ws.length > 0) {
           setInitialNodes(dbToFlowNodes(ws));
@@ -1178,6 +1288,13 @@ export default function WorkflowBuilder() {
     setPreviewSteps(prev => prev.map((s, i) => i === idx ? { ...s, [field]: value } : s));
 
   const handleSave = async (steps, connections, activateNow) => {
+    if (activeEnrollments > 0) {
+      const proceed = await confirm(
+        `${activeEnrollments} lead${activeEnrollments === 1 ? ' is' : 's are'} currently mid-way through this campaign. Saving rebuilds the workflow, so if their current step no longer exists in the new version, they'll be marked complete early instead of continuing. Save anyway?`,
+        { title: 'Leads are in progress' }
+      );
+      if (!proceed) return;
+    }
     await api.post(`/api/campaigns/${id}/steps`, { steps, connections });
     if (activateNow) {
       await api.post(`/api/campaigns/${id}/activate`, {});

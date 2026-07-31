@@ -61,49 +61,33 @@ export async function inviteUser(req, res) {
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return fail(res, 'Invalid email address.', 422);
   const existing = await one('SELECT id FROM users WHERE email=? LIMIT 1', [email]);
 
-  // Email already belongs to a user somewhere in the system (their own account,
-  // or a member of a different company). Add that same person to THIS company
-  // instead of blocking — only reject if they're already a member of this company.
+  let userId;
   if (existing) {
-    const alreadyMember = await one('SELECT 1 FROM company_users WHERE company_id=? AND user_id=? LIMIT 1', [req.companyId, existing.id]);
+    const memberships = await q('SELECT company_id FROM company_users WHERE user_id=?', [existing.id]);
+    const alreadyMember = memberships.some((m) => Number(m.company_id) === Number(req.companyId));
     if (alreadyMember) return fail(res, 'This user is already a member of your company.', 422);
 
-    await run('INSERT INTO company_users (company_id,user_id,role) VALUES (?,?,?)', [req.companyId, existing.id, role]);
-
-    let emailSent = false;
-    try {
-      const smtpHost = await getSetting('smtp_host', '', req.companyId);
-      if (smtpHost) {
-        const smtpPort = await getSetting('smtp_port', '587', req.companyId);
-        const transporter = nodemailer.createTransport({
-          host: smtpHost,
-          port: Number(smtpPort),
-          secure: smtpPort === '465',
-          auth: { user: await getSetting('smtp_user', '', req.companyId), pass: await getSetting('smtp_pass', '', req.companyId) }
-        });
-        const from = await getSetting('smtp_from', await getSetting('smtp_user', '', req.companyId), req.companyId);
-        const fromName = await getSetting('smtp_from_name', 'Dot Domino CRM', req.companyId);
-        await transporter.sendMail({
-          from: `${fromName} <${from}>`,
-          to: email,
-          subject: `You've been added to ${fromName}`,
-          html: `<p>Hi ${name},</p><p>You've been added to ${fromName} on Dot Domino CRM as ${role}. Log in with your existing password and switch to this company from the company switcher.</p><p><a href="${config.appUrl}/login">Log in</a></p>`
-        });
-        emailSent = true;
-      }
-    } catch (error) {
-      console.error('[invite] email send failed:', error.message);
+    // Each company is an independent tenant/client — the same login must never
+    // be able to see two companies' data via the switcher. If this email is
+    // still an active member of ANY other company, block instead of merging.
+    if (memberships.length > 0) {
+      return fail(res, 'This email already has an active account in another company. Remove them from that company first, or invite a different email.', 422);
     }
 
-    return ok(res, { id: existing.id, email_sent: emailSent }, emailSent ? `${email} already has an account — added them to your company and emailed them.` : `${email} already has an account — added them to your company.`);
+    // Email exists but has zero active company memberships anywhere (fully
+    // removed elsewhere) — safe to recycle as a brand new, independent
+    // identity: reset their name and send a fresh password-setup invite,
+    // same as a first-time invite, rather than reusing their old password.
+    userId = existing.id;
+    await run("UPDATE users SET name=?, status='invited' WHERE id=?", [name, userId]);
+  } else {
+    const placeholderHash = await bcrypt.hash(crypto.randomBytes(32).toString('hex'), 12);
+    const result = await run(
+      "INSERT INTO users (name,email,password,role,status) VALUES (?,?,?,?,'invited')",
+      [name, email, placeholderHash, role]
+    );
+    userId = result.insertId;
   }
-
-  const placeholderHash = await bcrypt.hash(crypto.randomBytes(32).toString('hex'), 12);
-  const result = await run(
-    "INSERT INTO users (name,email,password,role,status) VALUES (?,?,?,?,'invited')",
-    [name, email, placeholderHash, role]
-  );
-  const userId = result.insertId;
   await run('INSERT INTO company_users (company_id,user_id,role) VALUES (?,?,?)', [req.companyId, userId, role]);
 
   const token = crypto.randomBytes(32).toString('hex');

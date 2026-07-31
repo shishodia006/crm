@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { api } from '../../services/api.js';
 import { useToast } from '../../hooks/useToast.js';
+import { useConfirm } from '../../hooks/useConfirm.js';
 import LoadingBox from '../../components/common/LoadingBox.jsx';
 import EmailBuilder, { blocksToHtml } from './EmailBuilder.jsx';
 
@@ -22,11 +23,13 @@ export default function TemplateForm() {
   const { id } = useParams();
   const navigate = useNavigate();
   const toast = useToast();
+  const confirm = useConfirm();
   const isEdit = Boolean(id);
   const [form, setForm] = useState(BLANK);
   const [varCount, setVarCount] = useState('');
   const [loading, setLoading] = useState(isEdit);
   const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [blocks, setBlocks] = useState(null); // null = plain-text mode; array = builder mode
 
   useEffect(() => {
@@ -82,6 +85,20 @@ export default function TemplateForm() {
       toast(err.message, 'danger');
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!(await confirm(`Delete "${form.name}"? This cannot be undone.`, { title: 'Delete template' }))) return;
+    setDeleting(true);
+    try {
+      await api.delete(`/api/templates/${id}`);
+      toast('Template deleted.', 'success');
+      navigate('/templates');
+    } catch (err) {
+      toast(err.message || 'Could not delete this template.', 'danger');
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -219,6 +236,11 @@ export default function TemplateForm() {
             <div className="mt-4 d-flex gap-2">
               <button className="btn-crm" disabled={saving}>{saving ? 'Saving…' : 'Save Template'}</button>
               <button type="button" className="btn btn-outline-secondary" onClick={() => navigate(-1)}>Cancel</button>
+              {isEdit && (
+                <button type="button" className="btn btn-outline-danger ms-auto" disabled={deleting} onClick={handleDelete}>
+                  <i className="bi bi-trash me-1" />{deleting ? 'Deleting…' : 'Delete'}
+                </button>
+              )}
             </div>
           </form>
         </div>

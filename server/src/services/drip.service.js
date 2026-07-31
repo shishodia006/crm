@@ -261,6 +261,28 @@ export async function evaluateCondition(step, lead, ad = {}, enrollment = null) 
     const matched = keywordMatches(replyTextFromPayload(payload), expected);
     return op === 'neq' ? !matched : matched;
   }
+  // Tags and pipeline stage are NOT columns on `leads` — tags live in the
+  // lead_tags/tags join tables, and stage lives on that lead's deal(s) — so
+  // they can't go through the generic `lead[field]` lookup below (which would
+  // always read undefined and silently misfire every time).
+  if (field === 'tag') {
+    const tagName = String(expected || '').trim();
+    if (!tagName) return false;
+    const match = await one(
+      `SELECT 1 FROM lead_tags lt JOIN tags t ON t.id=lt.tag_id WHERE lt.lead_id=? AND t.name=? LIMIT 1`,
+      [lead.id, tagName]
+    );
+    return op === 'neq' ? !match : Boolean(match);
+  }
+  if (field === 'stage') {
+    const stageName = String(expected || '').trim();
+    if (!stageName) return false;
+    const match = await one(
+      `SELECT 1 FROM deals d JOIN pipeline_stages ps ON ps.id=d.stage_id WHERE d.lead_id=? AND ps.name=? LIMIT 1`,
+      [lead.id, stageName]
+    );
+    return op === 'neq' ? !match : Boolean(match);
+  }
   const value = lead[field];
   if (op === 'eq' || op === 'equals' || op === 'is_true') return String(value ?? '') === String(op === 'is_true' ? '1' : expected ?? '');
   if (op === 'neq') return String(value ?? '') !== String(expected ?? '');

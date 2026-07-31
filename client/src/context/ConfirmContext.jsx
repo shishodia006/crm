@@ -65,7 +65,7 @@ export function ConfirmProvider({ children }) {
             }}
           >
             <div style={{ fontSize: 15, fontWeight: 700, color: '#1e293b', marginBottom: 8 }}>{state.title}</div>
-            <div style={{ fontSize: 13, color: '#475569', marginBottom: state.kind === 'prompt' ? 10 : 20, lineHeight: 1.5, whiteSpace: 'pre-wrap' }}>{state.message}</div>
+            <div style={{ fontSize: 13, color: '#475569', marginBottom: state.kind === 'prompt' ? 10 : 20, lineHeight: 1.5, whiteSpace: 'pre-wrap', maxHeight: '50vh', overflowY: 'auto' }}>{state.message}</div>
             {state.kind === 'prompt' && (
               <input
                 type="text"

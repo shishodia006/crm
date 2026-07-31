@@ -4,6 +4,7 @@ import { config } from '../config/index.js';
 import { trackingUid, decryptValue } from '../utils/crypto.js';
 import { getSetting } from './settings.service.js';
 import { sendSms } from './sms.service.js';
+import { explainAnantyaError } from '../utils/anantyaError.js';
 
 // ─── Template helpers ─────────────────────────────────────────────
 
@@ -241,7 +242,7 @@ async function sendAnantyaText(apiKey, to, msgText) {
 
   const success = data.isSuccess ?? data.IsSuccess ?? response.ok;
   const msgId   = data.dataObj?.msgId ?? data.DataObj?.MsgId ?? null;
-  const error   = success ? null : (data.message || data.Message || text.slice(0, 200) || `HTTP ${response.status}`);
+  const error   = success ? null : explainAnantyaError(data.message || data.Message || text.slice(0, 200) || `HTTP ${response.status}`);
   return { success, msgId, error };
 }
 
@@ -278,7 +279,7 @@ async function sendAnantya(channel, apiKey, to, anantya_template_id, variables =
 
   const success = data.isSuccess ?? data.IsSuccess ?? response.ok;
   const msgId   = data.messageId || data.MessageId || data?.dataObj?.messageId || data?.dataObj?.id || data?.data?.messageId || null;
-  const error   = success ? null : (data.message || data.Message || text.slice(0, 200) || `HTTP ${response.status}`);
+  const error   = success ? null : explainAnantyaError(data.message || data.Message || text.slice(0, 200) || `HTTP ${response.status}`);
 
   return { success, msgId, error };
 }

@@ -42,6 +42,9 @@ export default function TemplatesTab() {
   const [accounts, setAccounts] = useState([]);
   const [waAccountId, setWaAccountId] = useState('');
   const [rcsAccountId, setRcsAccountId] = useState('');
+  const [syncingWa, setSyncingWa] = useState(false);
+  const [syncingRcs, setSyncingRcs] = useState(false);
+  const [syncErrors, setSyncErrors] = useState({ whatsapp: null, rcs: null });
   const { data, loading, reload } = useResource(`/api/templates?channel=${channel}`, [channel]);
   const templates = data?.templates ?? [];
 
@@ -55,16 +58,22 @@ export default function TemplatesTab() {
   const accountName = (id) => (id ? accounts.find((a) => String(a.id) === String(id))?.name : null) || 'Company default';
 
   const syncWa = async (syncChannel, accountId, silent = false) => {
+    const setSyncing = syncChannel === 'rcs' ? setSyncingRcs : setSyncingWa;
+    if (!silent) setSyncing(true);
     try {
       const acctParam = accountId ? `&account_id=${accountId}` : '';
       const r = await api.get(`/api/templates/wa-sync?save=1&channel=${syncChannel}${acctParam}`);
       if (!silent) toast(`Synced ${r.imported ?? 0} ${syncChannel === 'rcs' ? 'RCS' : 'WhatsApp'} templates.`, 'success');
+      setSyncErrors((prev) => ({ ...prev, [syncChannel]: null }));
       reload();
     } catch (err) {
-      // Auto-sync on page load stays quiet on failure (e.g. RCS not authorized
-      // on this Anantya account yet) — only a manual button click should nag.
+      // Auto-sync on page load used to fail totally silently (console.error
+      // only) — nobody ever saw it, so a broken/missing key could sit
+      // unnoticed indefinitely. Now it surfaces as a banner on the page.
       if (!silent) toast(err.message, 'danger');
-      else console.error(`[templates] auto-sync ${syncChannel} failed:`, err.message);
+      setSyncErrors((prev) => ({ ...prev, [syncChannel]: err.message }));
+    } finally {
+      if (!silent) setSyncing(false);
     }
   };
 
@@ -78,6 +87,15 @@ export default function TemplatesTab() {
 
   return (
     <div>
+      {(syncErrors.whatsapp || syncErrors.rcs) && (
+        <div className="alert alert-warning d-flex align-items-start gap-2 mb-3" style={{ fontSize: 13 }}>
+          <i className="bi bi-exclamation-triangle-fill mt-1" />
+          <div>
+            {syncErrors.whatsapp && <div><strong>WhatsApp sync failed:</strong> {syncErrors.whatsapp}</div>}
+            {syncErrors.rcs && <div><strong>RCS sync failed:</strong> {syncErrors.rcs}</div>}
+          </div>
+        </div>
+      )}
       <div className="d-flex align-items-center gap-2 mb-3 flex-wrap">
         {CHANNELS.map((c) => (
           <button key={c || 'all'} className={`btn btn-sm ${channel === c ? 'btn-crm' : 'btn-outline-secondary'} rounded-crm-xs`} onClick={() => setChannel(c)}>
@@ -91,8 +109,9 @@ export default function TemplatesTab() {
               {waAccounts.map((a) => <option key={a.id} value={a.id}>WA: {a.name}</option>)}
             </select>
           )}
-          <button className="btn btn-sm btn-outline-success rounded-crm-xs" onClick={() => syncWa('whatsapp', waAccountId)}>
-            <i className="bi bi-whatsapp me-1" />Sync WhatsApp
+          <button className="btn btn-sm btn-outline-success rounded-crm-xs" disabled={syncingWa} onClick={() => syncWa('whatsapp', waAccountId)}>
+            {syncingWa ? <span className="spinner-border spinner-border-sm me-1" /> : <i className="bi bi-whatsapp me-1" />}
+            {syncingWa ? 'Syncing…' : 'Sync WhatsApp'}
           </button>
           {rcsAccounts.length > 0 && (
             <select className="form-select form-select-sm" style={{ width: 170 }} value={rcsAccountId} onChange={(e) => setRcsAccountId(e.target.value)}>
@@ -100,8 +119,9 @@ export default function TemplatesTab() {
               {rcsAccounts.map((a) => <option key={a.id} value={a.id}>RCS: {a.name}</option>)}
             </select>
           )}
-          <button className="btn-crm-outline btn-crm-sm" onClick={() => syncWa('rcs', rcsAccountId)}>
-            <i className="bi bi-phone-vibrate me-1" />Sync RCS
+          <button className="btn-crm-outline btn-crm-sm" disabled={syncingRcs} onClick={() => syncWa('rcs', rcsAccountId)}>
+            {syncingRcs ? <span className="spinner-border spinner-border-sm me-1" /> : <i className="bi bi-phone-vibrate me-1" />}
+            {syncingRcs ? 'Syncing…' : 'Sync RCS'}
           </button>
         </div>
       </div>
