@@ -444,7 +444,12 @@ async function assignAgentToLead(leadId, actionDataJson, companyId) {
     );
     agentId = agent?.id;
   }
-  if (agentId) await updateById('leads', leadId, { assigned_to: agentId });
+  if (!agentId) return;
+  await updateById('leads', leadId, { assigned_to: agentId });
+  // deals.assigned_to is a separate column from leads.assigned_to — the Deal
+  // detail page reads the former, so assigning the lead here must also carry
+  // over to its open deal, or the two screens show two different owners.
+  await run('UPDATE deals SET assigned_to=? WHERE lead_id=? AND won_at IS NULL AND lost_at IS NULL', [agentId, leadId]);
 }
 
 async function createWorkflowTask(leadId, actionDataJson, companyId) {
@@ -484,9 +489,12 @@ async function createWorkflowDeal(leadId, campaignId, actionDataJson, companyId)
   const lead = await one('SELECT * FROM leads WHERE id=? LIMIT 1', [leadId]);
   if (!lead) return;
   // The Pipeline board and every /deals endpoint filter WHERE company_id=? — same
-  // "invisible row" bug as createWorkflowTask above.
-  await run('INSERT INTO deals (company_id,title,lead_id,stage_id,campaign_id,source_id) VALUES (?,?,?,?,?,?)', [
-    companyId, `${lead.company || lead.name} - Deal`, leadId, stageId, campaignId, lead.source_id
+  // "invisible row" bug as createWorkflowTask above. assigned_to is inherited from
+  // the lead's current assignee — deals.assigned_to is a separate column, so a
+  // brand-new deal wouldn't otherwise pick up an "Assign Agent" step that ran
+  // earlier in the same workflow (before this "Move Pipeline" step created it).
+  await run('INSERT INTO deals (company_id,title,lead_id,stage_id,campaign_id,source_id,assigned_to) VALUES (?,?,?,?,?,?,?)', [
+    companyId, `${lead.company || lead.name} - Deal`, leadId, stageId, campaignId, lead.source_id, lead.assigned_to || null
   ]);
 }
 

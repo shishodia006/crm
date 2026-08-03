@@ -861,6 +861,10 @@ body, h1, h2, h3, h4, h5, h6, button, input, select, textarea,
 }
 
 /* ── Width utilities ───────────────────────────────────── */
+/* Not a stock Bootstrap 5.3 utility — needed so flex children marked min-w-0
+   can actually shrink below their content's width, letting text-truncate work
+   instead of forcing the whole row (and page) to overflow horizontally. */
+.min-w-0 { min-width: 0 !important; }
 .min-w-140 { min-width: 140px; }
 .min-w-145 { min-width: 145px; }
 .min-w-150 { min-width: 150px; }
