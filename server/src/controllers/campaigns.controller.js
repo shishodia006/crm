@@ -77,7 +77,8 @@ export async function store(req, res) {
     quiet_hours: req.body.quiet_hours?.enabled ? {
       enabled: true,
       start: req.body.quiet_hours.start || '21:00',
-      end: req.body.quiet_hours.end || '09:00'
+      end: req.body.quiet_hours.end || '09:00',
+      timezone: req.body.quiet_hours.timezone || 'Asia/Kolkata'
     } : { enabled: false }
   };
   const result = await run(

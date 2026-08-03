@@ -78,22 +78,48 @@ export async function computeNextExecuteAt(stepId, conn = undefined) {
   return applyQuietHours(date, step.entry_rules);
 }
 
+// Reads date's wall-clock date/time as it appears in `timeZone` (e.g. the campaign's
+// quiet-hours zone), regardless of what timezone this Node process itself runs in.
+function zonedParts(date, timeZone) {
+  const fmt = new Intl.DateTimeFormat('en-US', {
+    timeZone, hourCycle: 'h23',
+    year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', second: '2-digit',
+  });
+  const parts = {};
+  for (const p of fmt.formatToParts(date)) if (p.type !== 'literal') parts[p.type] = p.value;
+  return parts;
+}
+
+// UTC offset (in minutes) of `timeZone` at `date` — e.g. +330 for Asia/Kolkata.
+function zoneOffsetMinutes(date, timeZone) {
+  const p = zonedParts(date, timeZone);
+  const asUTC = Date.UTC(+p.year, +p.month - 1, +p.day, +p.hour, +p.minute, +p.second);
+  return Math.round((asUTC - date.getTime()) / 60000);
+}
+
 function applyQuietHours(date, rawRules) {
   let rules = {};
   try { rules = typeof rawRules === 'string' ? JSON.parse(rawRules || '{}') : (rawRules || {}); } catch {}
   const quiet = rules.quiet_hours;
   if (!quiet?.enabled || !/^\d{2}:\d{2}$/.test(quiet.start || '') || !/^\d{2}:\d{2}$/.test(quiet.end || '')) return date;
+  // quiet.start/end are wall-clock times in this zone (set via the campaign form),
+  // not server-local time — the server itself may run in UTC while the account is IST.
+  const timeZone = quiet.timezone || 'Asia/Kolkata';
   const [startHour, startMin] = quiet.start.split(':').map(Number);
   const [endHour, endMin] = quiet.end.split(':').map(Number);
-  const current = date.getHours() * 60 + date.getMinutes();
+
+  const p = zonedParts(date, timeZone);
+  const current = Number(p.hour) * 60 + Number(p.minute);
   const start = startHour * 60 + startMin;
   const end = endHour * 60 + endMin;
   const withinQuiet = start === end ? false : start < end ? current >= start && current < end : current >= start || current < end;
   if (!withinQuiet) return date;
-  const next = new Date(date);
-  next.setHours(endHour, endMin, 0, 0);
-  if (start > end && current >= start) next.setDate(next.getDate() + 1);
-  return next;
+
+  const offset = zoneOffsetMinutes(date, timeZone);
+  let targetUTC = Date.UTC(+p.year, +p.month - 1, +p.day, endHour, endMin, 0) - offset * 60000;
+  if (start > end && current >= start) targetUTC += 86400000; // window wraps past midnight — push to the next day's end time
+  return new Date(targetUTC);
 }
 
 export async function processDue(batchSize = config.dripBatchSize) {

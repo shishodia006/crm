@@ -11,10 +11,35 @@ const GOALS = [
   { value: 'booked',     label: 'Appointment Booked' },
 ];
 
+// Quiet hours are compared against wall-clock time in this zone (server does the
+// same conversion — see applyQuietHours() in drip.service.js) instead of the
+// server process's own local time, which was the source of the UTC/IST mismatch.
+const DETECTED_TZ = (() => {
+  try { return Intl.DateTimeFormat().resolvedOptions().timeZone || 'Asia/Kolkata'; }
+  catch { return 'Asia/Kolkata'; }
+})();
+
+const TIMEZONES = [
+  { value: 'Asia/Kolkata',       label: 'India (IST, UTC+5:30)' },
+  { value: 'Asia/Dubai',         label: 'UAE (GST, UTC+4:00)' },
+  { value: 'Asia/Karachi',       label: 'Pakistan (PKT, UTC+5:00)' },
+  { value: 'Asia/Dhaka',         label: 'Bangladesh (BST, UTC+6:00)' },
+  { value: 'Asia/Kathmandu',     label: 'Nepal (NPT, UTC+5:45)' },
+  { value: 'Asia/Colombo',       label: 'Sri Lanka (UTC+5:30)' },
+  { value: 'Asia/Singapore',     label: 'Singapore (UTC+8:00)' },
+  { value: 'Europe/London',      label: 'United Kingdom (UTC+0:00/+1:00)' },
+  { value: 'America/New_York',   label: 'US Eastern (UTC-5:00/-4:00)' },
+  { value: 'America/Los_Angeles',label: 'US Pacific (UTC-8:00/-7:00)' },
+  { value: 'UTC',                label: 'UTC' },
+];
+if (!TIMEZONES.some((t) => t.value === DETECTED_TZ)) {
+  TIMEZONES.unshift({ value: DETECTED_TZ, label: `${DETECTED_TZ} (detected)` });
+}
+
 const BLANK = {
   name: '', description: '', type: 'drip', entry_source_ids: [], goal: '',
   reentry: 'always', reentry_after_days: 30,
-  quiet_hours: { enabled: false, start: '21:00', end: '09:00' }
+  quiet_hours: { enabled: false, start: '21:00', end: '09:00', timezone: DETECTED_TZ }
 };
 
 export default function CampaignForm() {
@@ -186,6 +211,14 @@ export default function CampaignForm() {
                     <option value="after_days">Allow after a waiting period</option>
                   </select>
                 </div>
+                <div className="col-md-6">
+                  <label className="form-label text-12 fw-semibold">Time zone (for quiet hours)</label>
+                  <select className="form-select form-select-sm" value={form.quiet_hours.timezone}
+                    onChange={(e) => setForm((p) => ({ ...p, quiet_hours: { ...p.quiet_hours, timezone: e.target.value } }))}>
+                    {TIMEZONES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
+                  </select>
+                  <div className="text-11 text-muted-3 mt-1">Auto-detected: {DETECTED_TZ}</div>
+                </div>
                 {form.reentry === 'after_days' && (
                   <div className="col-md-6">
                     <label className="form-label text-12 fw-semibold">Wait before re-entry (days)</label>
@@ -203,6 +236,7 @@ export default function CampaignForm() {
                   <>
                     <div className="col-6"><label className="form-label text-12">Start</label><input type="time" className="form-control form-control-sm" value={form.quiet_hours.start} onChange={(e) => setForm((p) => ({ ...p, quiet_hours: { ...p.quiet_hours, start: e.target.value } }))} /></div>
                     <div className="col-6"><label className="form-label text-12">End</label><input type="time" className="form-control form-control-sm" value={form.quiet_hours.end} onChange={(e) => setForm((p) => ({ ...p, quiet_hours: { ...p.quiet_hours, end: e.target.value } }))} /></div>
+                    <div className="col-12 text-11 text-muted-3">Times are in {TIMEZONES.find((t) => t.value === form.quiet_hours.timezone)?.label || form.quiet_hours.timezone}.</div>
                   </>
                 )}
               </div>
