@@ -1,10 +1,12 @@
 import { useState, useEffect } from 'react';
 import { api } from '../../services/api.js';
 import { useToast } from '../../hooks/useToast.js';
+import { useConfirm } from '../../hooks/useConfirm.js';
 import LoadingBox from '../../components/common/LoadingBox.jsx';
 
 export default function PipelineSettings() {
   const toast = useToast();
+  const confirm = useConfirm();
   const [stages, setStages] = useState([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -18,6 +20,20 @@ export default function PipelineSettings() {
 
   const addStage = () =>
     setStages((prev) => [...prev, { name: 'New Stage', color: '#6c757d', stage_order: prev.length + 1 }]);
+
+  const removeStage = async (idx) => {
+    const stage = stages[idx];
+    // Unsaved stage (just added, never persisted) — drop it locally, no API call needed.
+    if (!stage.id) return setStages((prev) => prev.filter((_, i) => i !== idx));
+    if (!(await confirm(`Delete the "${stage.name}" stage?`, { title: 'Delete stage', danger: true, confirmLabel: 'Delete' }))) return;
+    try {
+      await api.delete(`/api/settings/pipeline/${stage.id}`);
+      setStages((prev) => prev.filter((_, i) => i !== idx));
+      toast('Stage deleted.', 'success');
+    } catch (err) {
+      toast(err.message, 'danger');
+    }
+  };
 
   const save = async (e) => {
     e.preventDefault();
@@ -66,6 +82,14 @@ export default function PipelineSettings() {
                   value={stage.color}
                   onChange={(e) => update(idx, 'color', e.target.value)}
                 />
+                <button
+                  type="button"
+                  className="btn btn-outline-danger btn-sm flex-shrink-0"
+                  title="Delete stage"
+                  onClick={() => removeStage(idx)}
+                >
+                  <i className="bi bi-trash" />
+                </button>
               </div>
             ))}
           </div>

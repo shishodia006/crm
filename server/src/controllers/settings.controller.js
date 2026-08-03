@@ -415,3 +415,18 @@ export async function savePipelineStages(req, res) {
   }
   ok(res, null, 'Pipeline stages saved.');
 }
+
+export async function deletePipelineStage(req, res) {
+  const id = Number(req.params.id);
+  const stage = await one('SELECT id FROM pipeline_stages WHERE id=? LIMIT 1', [id]);
+  if (!stage) return fail(res, 'Pipeline stage not found.', 404);
+  // deals.stage_id / deal_stage_history.to_stage are ON DELETE RESTRICT — a stage
+  // still holding deals must be emptied first, or the FK throws a raw DB error.
+  const dealsInStage = await scalar('SELECT COUNT(*) FROM deals WHERE stage_id=?', [id]);
+  if (Number(dealsInStage) > 0) {
+    return fail(res, `Cannot delete — ${dealsInStage} deal(s) are still in this stage. Move them to another stage first.`, 409);
+  }
+  await run('DELETE FROM deal_stage_history WHERE from_stage=? OR to_stage=?', [id, id]);
+  await run('DELETE FROM pipeline_stages WHERE id=?', [id]);
+  ok(res, null, 'Pipeline stage deleted.');
+}

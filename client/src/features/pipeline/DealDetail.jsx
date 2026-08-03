@@ -14,13 +14,14 @@ export default function DealDetail() {
   const confirm = useConfirm();
   const promptText = usePrompt();
   const [deal, setDeal] = useState(null);
+  const [activities, setActivities] = useState([]);
   const [note, setNote] = useState('');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
   const load = () => {
     api.get(`/api/deals/${id}`)
-      .then((d) => setDeal(d.deal))
+      .then((d) => { setDeal(d.deal); setActivities(d.activities ?? []); })
       .catch((err) => { toast(err.message || 'Could not load this deal.', 'danger'); navigate('/pipeline'); })
       .finally(() => setLoading(false));
   };
@@ -63,8 +64,6 @@ export default function DealDetail() {
 
   if (loading) return <LoadingBox />;
   if (!deal) return null;
-
-  const activities = deal.activities ?? [];
 
   return (
     <>

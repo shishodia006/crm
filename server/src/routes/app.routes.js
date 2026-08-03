@@ -191,5 +191,6 @@ router.delete('/settings/apps/google-sheets/connections/:id', adminOnly, asyncRo
 router.post('/settings/apps/google-sheets/connections/:id/sync', adminOnly, asyncRoute(thirdPartyApps.syncGoogleSheet));
 router.get('/settings/pipeline', adminOnly, asyncRoute(settings.getPipelineStages));
 router.post('/settings/pipeline', adminOnly, asyncRoute(settings.savePipelineStages));
+router.delete('/settings/pipeline/:id', adminOnly, asyncRoute(settings.deletePipelineStage));
 
 export default router;
