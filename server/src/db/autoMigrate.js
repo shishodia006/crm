@@ -86,8 +86,15 @@ export async function runAutoMigrations() {
     for (const table of ['leads', 'campaigns', 'templates', 'deals', 'tasks', 'integrations', 'segments']) {
       await run(`UPDATE \`${table}\` SET company_id=? WHERE company_id IS NULL`, [defaultCompanyId]);
     }
+    // Only back-fill users who belong to NO company yet (pre-multi-tenancy accounts).
+    // This must never re-enroll users who already have their own company membership —
+    // doing so on every boot was silently adding every active user (including ones
+    // who registered their own separate workspace) into Default Workspace, letting
+    // one tenant switch into another tenant's company and see its leads.
     await run(
-      'INSERT IGNORE INTO company_users (company_id, user_id) SELECT ?, id FROM users WHERE is_active=1',
+      `INSERT IGNORE INTO company_users (company_id, user_id)
+       SELECT ?, u.id FROM users u
+       WHERE u.is_active=1 AND NOT EXISTS (SELECT 1 FROM company_users cu WHERE cu.user_id = u.id)`,
       [defaultCompanyId]
     );
 
