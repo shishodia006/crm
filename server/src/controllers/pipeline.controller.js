@@ -119,7 +119,7 @@ export async function dealsShow(req, res) {
   const deal = await one(
     `SELECT d.*, d.expected_close AS expected_close_date,
             IF(d.won_at IS NOT NULL, 'won', IF(d.lost_at IS NOT NULL, 'lost', 'open')) AS status,
-            l.name AS lead_name, l.email, l.mobile, l.company, l.source_id, ps.name AS stage_name, u.name AS agent_name
+            l.name AS lead_name, l.email, l.mobile, l.company, l.source_id, ps.name AS stage_name, u.name AS assigned_name
      FROM deals d LEFT JOIN leads l ON l.id=d.lead_id LEFT JOIN pipeline_stages ps ON ps.id=d.stage_id LEFT JOIN users u ON u.id=d.assigned_to
      WHERE d.id=? AND d.company_id=? LIMIT 1`,
     [Number(req.params.id), req.companyId]

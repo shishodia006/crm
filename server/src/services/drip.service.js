@@ -463,16 +463,26 @@ async function createWorkflowTask(leadId, actionDataJson, companyId) {
 async function createWorkflowDeal(leadId, campaignId, actionDataJson, companyId) {
   let data = {};
   try { data = typeof actionDataJson === 'string' ? JSON.parse(actionDataJson || '{}') : actionDataJson || {}; } catch { data = {}; }
-  const existing = await one('SELECT id FROM deals WHERE lead_id=? LIMIT 1', [leadId]);
-  if (existing) return;
-  const lead = await one('SELECT * FROM leads WHERE id=? LIMIT 1', [leadId]);
-  if (!lead) return;
   let stageId = data.stage_id || data.pipeline_stage;
   if (!stageId) {
     const stage = await one('SELECT id FROM pipeline_stages ORDER BY stage_order ASC LIMIT 1');
     stageId = stage?.id;
   }
   if (!stageId) return;
+
+  const existing = await one('SELECT id,stage_id FROM deals WHERE lead_id=? LIMIT 1', [leadId]);
+  if (existing) {
+    // The step is labelled "move the lead to a different pipeline stage" — a lead
+    // that already has a deal (e.g. auto-created when it was marked qualified)
+    // must actually move to the configured stage here, not silently no-op.
+    if (Number(existing.stage_id) === Number(stageId)) return;
+    await run('INSERT INTO deal_stage_history (deal_id,from_stage,to_stage) VALUES (?,?,?)', [existing.id, existing.stage_id, stageId]);
+    await run('UPDATE deals SET stage_id=? WHERE id=?', [stageId, existing.id]);
+    return;
+  }
+
+  const lead = await one('SELECT * FROM leads WHERE id=? LIMIT 1', [leadId]);
+  if (!lead) return;
   // The Pipeline board and every /deals endpoint filter WHERE company_id=? — same
   // "invisible row" bug as createWorkflowTask above.
   await run('INSERT INTO deals (company_id,title,lead_id,stage_id,campaign_id,source_id) VALUES (?,?,?,?,?,?)', [

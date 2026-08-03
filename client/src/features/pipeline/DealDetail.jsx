@@ -5,7 +5,7 @@ import { useToast } from '../../hooks/useToast.js';
 import { useConfirm } from '../../hooks/useConfirm.js';
 import { usePrompt } from '../../hooks/usePrompt.js';
 import LoadingBox from '../../components/common/LoadingBox.jsx';
-import { formatDateTime, money } from '../../utils/formatters.js';
+import { formatDate, formatDateTime, money } from '../../utils/formatters.js';
 
 export default function DealDetail() {
   const { id } = useParams();
@@ -91,7 +91,7 @@ export default function DealDetail() {
                 {[
                   ['Lead', deal.lead_name], ['Value', money(deal.value)],
                   ['Stage', deal.stage_name], ['Assigned', deal.assigned_name],
-                  ['Expected Close', deal.expected_close_date], ['Status', deal.status],
+                  ['Expected Close', deal.expected_close_date ? formatDate(deal.expected_close_date) : null], ['Status', deal.status],
                 ].map(([label, val]) => (
                   <div key={label} className="col-sm-4">
                     <div className="text-muted small">{label}</div>

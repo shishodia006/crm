@@ -2,6 +2,7 @@ import { q, one, run } from '../db/pool.js';
 import { sendCommunication } from './comm.service.js';
 import { insertLead } from './lead.service.js';
 import { notifyUsers, notifyRecipientsForLead } from './notifications.service.js';
+import { recordCommunicationEvent } from './engagement.service.js';
 
 // Channels where an inbound message from a phone number nobody has talked to yet
 // should still show up on the panel — a business WhatsApp/RCS number receiving a
@@ -164,7 +165,7 @@ export async function recordInboundMessage({
 }) {
   if (!body) return { recorded: false, reason: 'missing_body' };
 
-  const communication = contextProviderMsgId
+  let communication = contextProviderMsgId
     ? await one(
         companyId
           ? `SELECT cm.* FROM communications cm JOIN leads l ON l.id=cm.lead_id
@@ -208,6 +209,19 @@ export async function recordInboundMessage({
   }
   if (!lead) return { recorded: false, reason: 'lead_not_found' };
 
+  // The provider didn't send a reply-to id we could match (or Anantya's payload
+  // shape doesn't carry one for this message type) — this is still a real reply
+  // from a known lead, and the drip engine's reply-keyword/engagement-event
+  // condition checks need SOME outbound communication to scope to, or they can
+  // never see this reply at all. Best-effort: treat it as a reply to this lead's
+  // most recent outbound message on the same channel.
+  if (!communication) {
+    communication = await one(
+      'SELECT * FROM communications WHERE lead_id=? AND channel=? ORDER BY id DESC LIMIT 1',
+      [lead.id, channel]
+    );
+  }
+
   const conversation = await getOrCreateConversation(companyId || lead.company_id, lead.id, channel);
 
   try {
@@ -220,6 +234,24 @@ export async function recordInboundMessage({
       'UPDATE conversations SET last_message_at=COALESCE(?,NOW()), last_message_preview=?, unread_count=unread_count+1 WHERE id=?',
       [occurredAt, truncate(body), conversation.id]
     );
+    if (communication) {
+      // Feeds evaluateCondition()'s reply_keyword/engagement_event check in
+      // drip.service.js — without this, a workflow's reply-based Condition step
+      // can never see a reply that only arrived through the Conversations pipeline
+      // (i.e. didn't match the stricter Meta-style status-webhook parsing).
+      try {
+        await recordCommunicationEvent({
+          provider: 'crm_inbound',
+          communicationId: communication.id,
+          companyId: companyId || lead.company_id,
+          eventType: 'replied',
+          occurredAt,
+          payload: { text: { body } },
+        });
+      } catch (err) {
+        console.error('[conversation] recordCommunicationEvent (replied) failed:', err.message);
+      }
+    }
     try {
       const recipients = await notifyRecipientsForLead(companyId || lead.company_id, lead.assigned_to);
       await notifyUsers(recipients, {
