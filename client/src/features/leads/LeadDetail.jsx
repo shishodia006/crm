@@ -298,6 +298,7 @@ export default function LeadDetail() {
   const [lead, setLead]             = useState(null);
   const [campaigns, setCampaigns]   = useState([]);
   const [enrollments, setEnrollments] = useState([]);
+  const [tags, setTags]             = useState([]);
   const [loading, setLoading]       = useState(true);
   const [modalEnrollment, setModalEnrollment] = useState(null);
   const [enrollSelect, setEnrollSelect] = useState('');
@@ -313,6 +314,7 @@ export default function LeadDetail() {
         setLead(d.lead);
         setCampaigns(d.campaigns ?? []);
         setEnrollments(d.enrollments ?? []);
+        setTags(d.tags ?? []);
       })
       .catch((err) => { toast(err.message || 'Could not load this lead.', 'danger'); navigate('/leads'); })
       .finally(() => { if (!silent) setLoading(false); });
@@ -363,7 +365,16 @@ export default function LeadDetail() {
         <button className="btn btn-link text-muted p-0 me-2" onClick={() => navigate('/leads')}>
           <i className="bi bi-arrow-left fs-5" />
         </button>
-        <h4 className="fw-bold mb-0 me-auto">{lead.name}</h4>
+        <h4 className="fw-bold mb-0">{lead.name}</h4>
+        {tags.length > 0 && (
+          <div className="d-flex flex-wrap gap-1 me-auto">
+            {tags.map(t => (
+              <span key={t.id} className="badge rounded-pill" style={{ background: `${t.color}20`, color: t.color }}>
+                {t.name}
+              </span>
+            ))}
+          </div>
+        )}
         <button className="btn btn-outline-primary btn-sm" onClick={() => navigate(`/leads/${id}/edit`)}>
           <i className="bi bi-pencil me-1" />Edit
         </button>

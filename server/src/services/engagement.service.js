@@ -57,22 +57,35 @@ export async function recordCommunicationEvent({ provider = 'unknown', providerM
 }
 
 async function triggerMatchingEventConditions(communication, eventType) {
+  // An enrollment waiting on a reply/event condition sits parked with
+  // current_step_id pointing AT that (not-yet-executed) condition step itself —
+  // see advanceEnrollment()'s isEventCondition guard in drip.service.js, which
+  // deliberately skips auto-chaining past it for exactly this reason. So the
+  // enrollment to re-check is the one whose *current* step is the condition,
+  // not one whose current step's child is a condition.
   const enrollments = await q(
-    `SELECT le.id AS enrollment_id, le.current_step_id, ws.id AS condition_step_id, ws.action_data
+    `SELECT le.id AS enrollment_id, le.campaign_id, ws.id AS condition_step_id, ws.action_data
      FROM lead_enrollments le
-     JOIN workflow_steps current_step ON current_step.id=le.current_step_id
-     JOIN workflow_steps ws ON ws.parent_id=current_step.id AND ws.type='condition'
+     JOIN workflow_steps ws ON ws.id=le.current_step_id AND ws.type='condition'
      WHERE le.lead_id=? AND le.status='active'`,
     [communication.lead_id]
   );
-  const { advanceEnrollment } = await import('./drip.service.js');
+  const { executeWorkflowStep } = await import('./drip.service.js');
   for (const enrollment of enrollments) {
     let actionData = {};
     try { actionData = JSON.parse(enrollment.action_data || '{}'); } catch {}
     const matchesEvent = actionData.condition === 'engagement_event' && String(actionData.condition_val || '').toLowerCase() === eventType;
     const matchesKeyword = actionData.condition === 'reply_keyword' && eventType === 'replied' && keywordMatches(replyTextFromPayload(communication._eventPayload || {}), actionData.condition_val);
     if (!matchesEvent && !matchesKeyword) continue;
-    await advanceEnrollment(enrollment.enrollment_id, enrollment.condition_step_id, { triggered_by_event: eventType, communication_id: communication.id });
+    // Force the condition to evaluate right now instead of going through
+    // advanceEnrollment (which would just recompute its wait window and park it
+    // again) — we already know a matching reply/event just landed.
+    await executeWorkflowStep({
+      enrollment_id: enrollment.enrollment_id,
+      lead_id: communication.lead_id,
+      campaign_id: enrollment.campaign_id,
+      current_step_id: enrollment.condition_step_id,
+    });
   }
 }
 

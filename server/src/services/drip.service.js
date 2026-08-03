@@ -229,11 +229,11 @@ export async function executeWorkflowStep(enrollment, depth = 0) {
   } else if (['assign_agent'].includes(step.type)) {
     await assignAgentToLead(lead.id, step.action_data, lead.company_id);
   } else if (['create_task', 'task'].includes(step.type)) {
-    await createWorkflowTask(lead.id, step.action_data);
+    await createWorkflowTask(lead.id, step.action_data, lead.company_id);
   } else if (step.type === 'update_score') {
     await addScoreEvent(lead.id, ad.event || 'workflow_action');
   } else if (step.type === 'move_pipeline') {
-    await createWorkflowDeal(lead.id, enrollment.campaign_id, step.action_data);
+    await createWorkflowDeal(lead.id, enrollment.campaign_id, step.action_data, lead.company_id);
   } else if (step.type === 'tag_lead') {
     await applyTagToLead(lead.id, ad.tag_name);
   } else if (step.type === 'exit') {
@@ -350,8 +350,22 @@ async function sendWithFallback(primary, lead, template, enrollment, step, actio
     .map((channel) => String(channel).toLowerCase()).filter((channel) => ['email','whatsapp','rcs','sms'].includes(channel) && channel !== primary))];
   const result = { executed_at: new Date().toISOString(), fallback_order: channels };
   for (const channel of channels) {
+    let channelTemplate = template;
+    if (channel !== primary) {
+      // A fallback channel needs its own template (a WhatsApp template has no
+      // subject line and reads as garbled placeholder syntax sent as an email) —
+      // never resend the primary channel's template on a different channel.
+      const fallbackTemplateId = actionData[`fallback_${channel}_template_id`];
+      channelTemplate = fallbackTemplateId
+        ? await one("SELECT * FROM templates WHERE id=? AND status='active' LIMIT 1", [fallbackTemplateId])
+        : null;
+      if (!channelTemplate) {
+        result[channel] = { delivered: false, comm_id: null, error: 'no_fallback_template_configured' };
+        continue;
+      }
+    }
     const accountId = channel === primary ? actionData.integration_account_id : null;
-    const send = await sendCommunication(channel, lead, template, enrollment.enrollment_id, step.id, accountId);
+    const send = await sendCommunication(channel, lead, channelTemplate, enrollment.enrollment_id, step.id, accountId);
     result[channel] = send;
     if (send.delivered) break;
   }
@@ -386,9 +400,18 @@ export async function advanceEnrollment(enrollmentId, nextStepId, result, depth 
   ]);
 
   // Auto-chain: if next step fires immediately (delay=0), execute it right now
-  const nextStep = await one('SELECT type,delay_value FROM workflow_steps WHERE id=? LIMIT 1', [nextStepId]);
+  const nextStep = await one('SELECT type,delay_value,action_data FROM workflow_steps WHERE id=? LIMIT 1', [nextStepId]);
+  let nextAd = {};
+  try { nextAd = typeof nextStep?.action_data === 'string' ? JSON.parse(nextStep.action_data || '{}') : (nextStep?.action_data || {}); } catch {}
+  // A reply/event condition can never be auto-chained, even at delay=0 — the reply
+  // hasn't happened yet the instant the previous step finishes sending. It must sit
+  // parked at current_step_id (so triggerMatchingEventConditions() in
+  // engagement.service.js can find and fire it the moment a matching reply/event
+  // webhook actually lands) until either that happens or its own wait window elapses
+  // and processDue() evaluates it — at which point it falls through to the NO branch.
+  const isEventCondition = nextStep?.type === 'condition' && ['reply_keyword', 'engagement_event'].includes(nextAd.condition);
   const immediateTypes = ['email','whatsapp','rcs','sms','send_email','send_whatsapp','send_rcs','send_sms','multi_send','assign_agent','create_task','task','move_pipeline','tag_lead','exit','condition'];
-  if (nextStep && Number(nextStep.delay_value || 0) === 0 && immediateTypes.includes(nextStep.type) && depth < MAX_CHAIN) {
+  if (nextStep && !isEventCondition && Number(nextStep.delay_value || 0) === 0 && immediateTypes.includes(nextStep.type) && depth < MAX_CHAIN) {
     // executeWorkflowStep() (and everything it calls) reads enrollment.enrollment_id,
     // matching processDue()'s aliased query — a plain `SELECT *` here returns `id`
     // instead, leaving enrollment.enrollment_id undefined for every step after the
@@ -424,18 +447,20 @@ async function assignAgentToLead(leadId, actionDataJson, companyId) {
   if (agentId) await updateById('leads', leadId, { assigned_to: agentId });
 }
 
-async function createWorkflowTask(leadId, actionDataJson) {
+async function createWorkflowTask(leadId, actionDataJson, companyId) {
   let data = {};
   try { data = JSON.parse(actionDataJson || '{}'); } catch { data = {}; }
   const dueHours = Number(data.due_hours || 24);
   const dueAt = new Date(Date.now() + dueHours * 3600 * 1000);
+  // Every task list (Tasks page, Deal detail's Activity) filters WHERE company_id=? —
+  // a task inserted without it is a real row that no screen will ever show.
   await run(
-    'INSERT INTO tasks (title,description,lead_id,priority,due_at) VALUES (?,?,?,?,?)',
-    [data.title || data.task_title || 'Follow up lead', data.description || null, leadId, data.priority || 'medium', dueAt]
+    'INSERT INTO tasks (company_id,title,description,lead_id,priority,due_at) VALUES (?,?,?,?,?,?)',
+    [companyId, data.title || data.task_title || 'Follow up lead', data.description || null, leadId, data.priority || 'medium', dueAt]
   );
 }
 
-async function createWorkflowDeal(leadId, campaignId, actionDataJson) {
+async function createWorkflowDeal(leadId, campaignId, actionDataJson, companyId) {
   let data = {};
   try { data = typeof actionDataJson === 'string' ? JSON.parse(actionDataJson || '{}') : actionDataJson || {}; } catch { data = {}; }
   const existing = await one('SELECT id FROM deals WHERE lead_id=? LIMIT 1', [leadId]);
@@ -448,8 +473,10 @@ async function createWorkflowDeal(leadId, campaignId, actionDataJson) {
     stageId = stage?.id;
   }
   if (!stageId) return;
-  await run('INSERT INTO deals (title,lead_id,stage_id,campaign_id,source_id) VALUES (?,?,?,?,?)', [
-    `${lead.company || lead.name} - Deal`, leadId, stageId, campaignId, lead.source_id
+  // The Pipeline board and every /deals endpoint filter WHERE company_id=? — same
+  // "invisible row" bug as createWorkflowTask above.
+  await run('INSERT INTO deals (company_id,title,lead_id,stage_id,campaign_id,source_id) VALUES (?,?,?,?,?,?)', [
+    companyId, `${lead.company || lead.name} - Deal`, leadId, stageId, campaignId, lead.source_id
   ]);
 }
 

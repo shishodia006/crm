@@ -140,6 +140,13 @@ function makeNodeData(type, overrides = {}) {
     rcs_integration_account_id: '',
     sms_integration_account_id: '',
     fallback_channels: [],
+    // template used for each fallback channel, if that channel is checked above —
+    // a fallback send must never reuse the primary channel's template (e.g. a
+    // WhatsApp template has no subject line and reads wrong sent as an email)
+    fallback_email_template_id: '',
+    fallback_whatsapp_template_id: '',
+    fallback_rcs_template_id: '',
+    fallback_sms_template_id: '',
     ab_template_id: '',
     integration_account_id: '',
     ...overrides,
@@ -175,6 +182,10 @@ function dbToFlowNodes(workflowSteps) {
         rcs_integration_account_id: String(ad.rcs_integration_account_id ?? ''),
         sms_integration_account_id: String(ad.sms_integration_account_id ?? ''),
         fallback_channels: Array.isArray(ad.fallback_channels) ? ad.fallback_channels : [],
+        fallback_email_template_id: String(ad.fallback_email_template_id ?? ''),
+        fallback_whatsapp_template_id: String(ad.fallback_whatsapp_template_id ?? ''),
+        fallback_rcs_template_id: String(ad.fallback_rcs_template_id ?? ''),
+        fallback_sms_template_id: String(ad.fallback_sms_template_id ?? ''),
         ab_template_id: String(ad.ab_template_id ?? ''),
         integration_account_id: String(ad.integration_account_id ?? ''),
       }),
@@ -572,10 +583,13 @@ function NodeConfigPanel({ node, onClose, onChange, msgTemplates, setMsgTemplate
         </div>
 
         {/* Delay */}
-        {!['condition', 'exit'].includes(data.stepType) && (
+        {(() => {
+          const isEventCondition = data.stepType === 'condition' && ['reply_keyword', 'engagement_event'].includes(data.condition);
+          if (data.stepType === 'exit' || (data.stepType === 'condition' && !isEventCondition)) return null;
+          return (
           <div style={{ marginBottom: 12 }}>
             <label style={{ fontSize: 11, fontWeight: 700, color: '#374151', display: 'block', marginBottom: 4 }}>
-              {data.stepType === 'wait' ? 'Wait Duration' : 'Delay Before This Step'}
+              {data.stepType === 'wait' ? 'Wait Duration' : isEventCondition ? 'Wait for a reply, up to' : 'Delay Before This Step'}
             </label>
             <div style={{ display: 'flex', gap: 8 }}>
               <input type="number" className="form-control form-control-sm"
@@ -589,13 +603,26 @@ function NodeConfigPanel({ node, onClose, onChange, msgTemplates, setMsgTemplate
                 <option value="days">Days</option>
               </select>
             </div>
-            {data.stepType !== 'wait' && data.delay_value > 0 && (
+            {data.stepType !== 'wait' && !isEventCondition && data.delay_value > 0 && (
               <div style={{ fontSize: 10, color: '#6366f1', marginTop: 4 }}>
                 ⏱ This step will run {data.delay_value} {data.delay_unit} after the previous step
               </div>
             )}
+            {isEventCondition && (
+              Number(data.delay_value) > 0 ? (
+                <div style={{ fontSize: 10, color: '#6366f1', marginTop: 4 }}>
+                  Checked instantly the moment a matching reply/event arrives — or after {data.delay_value} {data.delay_unit} with no reply, the "No" path is taken.
+                </div>
+              ) : (
+                <div style={{ fontSize: 10, color: '#b91c1c', marginTop: 4, fontWeight: 600 }}>
+                  <i className="bi bi-exclamation-triangle me-1" />
+                  0 means this checks immediately — before the lead has any chance to reply. Set a real wait time (e.g. 24 hours).
+                </div>
+              )
+            )}
           </div>
-        )}
+          );
+        })()}
 
         {/* Template */}
         {isComm && (
@@ -765,6 +792,26 @@ function NodeConfigPanel({ node, onClose, onChange, msgTemplates, setMsgTemplate
               ))}
             </div>
             <div style={{ fontSize: 10, color: '#64748b', marginTop: 4 }}>Selected channels are attempted left-to-right in the order shown.</div>
+            {['email', 'whatsapp', 'rcs', 'sms'].filter((channel) => data.fallback_channels?.includes(channel)).map((channel) => {
+              const field = `fallback_${channel}_template_id`;
+              const channelTpls = msgTemplates.filter(t => t.channel === channel && !t.integration_account_id);
+              return (
+                <div key={channel} style={{ marginTop: 8 }}>
+                  <label style={{ fontSize: 10, fontWeight: 700, color: '#374151', textTransform: 'capitalize', display: 'block', marginBottom: 3 }}>
+                    {channel} template for this fallback
+                  </label>
+                  <select className="form-select form-select-sm" value={data[field]} onChange={e => onChange(field, e.target.value)}>
+                    <option value="">— Select Template —</option>
+                    {channelTpls.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+                  </select>
+                  {channelTpls.length === 0 && (
+                    <div style={{ fontSize: 10, color: '#b45309', marginTop: 3 }}>
+                      No {channel} templates yet — this fallback will be skipped until one is selected.
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
         )}
 
@@ -774,7 +821,16 @@ function NodeConfigPanel({ node, onClose, onChange, msgTemplates, setMsgTemplate
             <div style={{ marginBottom: 10 }}>
               <label style={{ fontSize: 11, fontWeight: 700, color: '#374151', display: 'block', marginBottom: 4 }}>Check Field</label>
               <select className="form-select form-select-sm" value={data.condition}
-                onChange={e => onChange('condition', e.target.value)}>
+                onChange={e => {
+                  const value = e.target.value;
+                  onChange('condition', value);
+                  // Switching to a reply/event check with no wait time configured yet
+                  // would otherwise check instantly, before any reply can exist.
+                  if (['reply_keyword', 'engagement_event'].includes(value) && !Number(data.delay_value)) {
+                    onChange('delay_value', 24);
+                    onChange('delay_unit', 'hours');
+                  }
+                }}>
                 <option value="engagement_event">Message engagement event</option>
                 <option value="reply_keyword">Reply keyword</option>
                 <option value="">— Select —</option>
@@ -1048,7 +1104,16 @@ function BuilderCanvas({ initialNodes, initialEdges, msgTemplates, setMsgTemplat
           };
         }
         if (['email','whatsapp','rcs','sms'].includes(d.stepType)) {
-          base.action_data = { ...(base.action_data || {}), fallback_channels: base.fallback_channels, ab_template_id: base.ab_template_id, integration_account_id: base.integration_account_id };
+          base.action_data = {
+            ...(base.action_data || {}),
+            fallback_channels: base.fallback_channels,
+            fallback_email_template_id:    d.fallback_email_template_id    ? Number(d.fallback_email_template_id)    : null,
+            fallback_whatsapp_template_id: d.fallback_whatsapp_template_id ? Number(d.fallback_whatsapp_template_id) : null,
+            fallback_rcs_template_id:      d.fallback_rcs_template_id      ? Number(d.fallback_rcs_template_id)      : null,
+            fallback_sms_template_id:      d.fallback_sms_template_id      ? Number(d.fallback_sms_template_id)      : null,
+            ab_template_id: base.ab_template_id,
+            integration_account_id: base.integration_account_id,
+          };
           delete base.fallback_channels;
           delete base.ab_template_id;
           delete base.integration_account_id;
