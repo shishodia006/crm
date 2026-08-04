@@ -140,6 +140,10 @@ export default function LeadsPage() {
         ? <span className="badge badge-source badge-crm">{r.source_name}</span>
         : <span className="text-muted">—</span>
     },
+    { label: 'Assigned', render: (r) => r.assigned_name
+        ? <span className="badge badge-crm" style={{ background: '#ede9fe', color: '#7c3aed' }}>{r.assigned_name}</span>
+        : <span className="text-muted text-12">Unassigned</span>
+    },
     { label: 'Category', render: (r) => {
       const cat = r.category?.toLowerCase().replace(' ', '_') || 'cold';
       return (

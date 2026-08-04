@@ -9,6 +9,7 @@ const CHANNELS = [
   { key: 'whatsapp', label: 'WhatsApp' },
   { key: 'sms', label: 'SMS' },
   { key: 'rcs', label: 'RCS' },
+  { key: 'call', label: 'Voice' },
 ];
 
 const PROVIDER_OPTIONS = {
@@ -30,6 +31,7 @@ const PROVIDER_OPTIONS = {
     { value: 'textlocal', label: 'TextLocal' },
   ],
   rcs: [{ value: 'anantya', label: 'Anantya.ai' }],
+  call: [{ value: 'twilio', label: 'Twilio' }],
 };
 
 const PROVIDER_FIELDS = {
@@ -59,6 +61,11 @@ const PROVIDER_FIELDS = {
     { name: 'sms_mshastra_sender', label: 'Sender ID' },
   ],
   'rcs:anantya': [{ name: 'rcs_api_key', label: 'API Key', type: 'password' }],
+  'call:twilio': [
+    { name: 'twilio_account_sid', label: 'Account SID' },
+    { name: 'twilio_auth_token', label: 'Auth Token', type: 'password' },
+    { name: 'twilio_phone_number', label: 'Twilio Phone Number (E.164, e.g. +14155551234)' },
+  ],
 };
 const GENERIC_SMS_FIELDS = [
   { name: 'sms_api_url', label: 'API URL' },
@@ -138,7 +145,7 @@ export default function ChannelsPage() {
     <div>
       <div className="mb-1">
         <h5 className="fw-bold mb-0 text-brand">Channels</h5>
-        <div className="text-muted text-12">How you reach leads and customers — email, WhatsApp, SMS, RCS.</div>
+        <div className="text-muted text-12">How you reach leads and customers — email, WhatsApp, SMS, RCS, Voice.</div>
       </div>
 
       <div className="row g-3 mt-3">
@@ -171,6 +178,14 @@ export default function ChannelsPage() {
                   )}
                 </div>
               ))}
+
+              {channel === 'call' && (
+                <div className="text-11 text-muted-2 mb-3">
+                  After saving, open this number in your Twilio Console → Phone Numbers → Voice Configuration →
+                  "A call comes in" → Webhook, and set it to <code>{`${window.location.origin}/webhook/twilio/voice/inbound`}</code> (HTTP POST) —
+                  this one-time step isn't done automatically.
+                </div>
+              )}
 
               <button className="btn-crm w-100 justify-content-center mt-2" disabled={saving} onClick={handleConfigure}>
                 {saving ? 'Saving…' : 'Configure'}

@@ -68,6 +68,7 @@ router.post('/leads/:id/enroll', requireAuth, requireCompanyRole('agent'), async
 router.post('/leads/bulk-enroll', requireAuth, requireCompanyRole('agent'), asyncRoute(leads.bulkEnroll));
 router.post('/leads/:id/score', requireAuth, asyncRoute(leads.addScore));
 router.get('/leads/:id/timeline', requireAuth, asyncRoute(leads.timeline));
+router.post('/leads/:id/call', requireAuth, requireCompanyRole('agent'), asyncRoute(leads.call));
 router.get('/leads/:id/enrollments/:eid', requireAuth, asyncRoute(leads.enrollmentDetail));
 
 // Campaigns

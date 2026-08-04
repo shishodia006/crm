@@ -98,7 +98,15 @@ export function createApp() {
       if (err) return next(err);
       const text = Buffer.isBuffer(req.body) ? req.body.toString('utf8') : '';
       req.rawBody = text;
-      try { req.body = text ? JSON.parse(text) : {}; } catch { req.body = {}; }
+      if (req.path.startsWith('/webhook/twilio/')) {
+        // Twilio's voice webhooks (the incoming-call TwiML request + every
+        // status callback) are always application/x-www-form-urlencoded, never
+        // JSON — the JSON.parse below would silently produce {} and drop
+        // CallSid/From/To/CallStatus/DialCallStatus/etc entirely.
+        req.body = Object.fromEntries(new URLSearchParams(text));
+      } else {
+        try { req.body = text ? JSON.parse(text) : {}; } catch { req.body = {}; }
+      }
       next();
     });
   });

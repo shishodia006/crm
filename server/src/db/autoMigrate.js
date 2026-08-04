@@ -208,6 +208,18 @@ export async function runAutoMigrations() {
         \`group\` = VALUES(\`group\`)
     `);
 
+    // 010_twilio_voice
+    await pool.query("ALTER TABLE `communications` MODIFY COLUMN `channel` ENUM('email','whatsapp','rcs','sms','call') NOT NULL");
+    await pool.query(`ALTER TABLE \`communications\` MODIFY COLUMN \`status\` ENUM(
+      'queued','sent','delivered','opened','clicked','replied','bounced','failed','unsubscribed',
+      'ringing','in_progress','no_answer','busy','canceled','completed'
+    ) NOT NULL DEFAULT 'queued'`);
+    await ensureColumn('communications', 'direction', "`direction` ENUM('outbound','inbound') NOT NULL DEFAULT 'outbound'");
+    await ensureColumn('communications', 'duration_seconds', '`duration_seconds` INT UNSIGNED DEFAULT NULL');
+    await ensureColumn('communications', 'recording_url', '`recording_url` VARCHAR(500) DEFAULT NULL');
+    await ensureColumn('communications', 'agent_user_id', '`agent_user_id` INT UNSIGNED DEFAULT NULL', 'idx_agent', 'ADD INDEX `idx_agent` (`agent_user_id`)');
+    await ensureForeignKey('communications', 'fk_communications_agent_user', 'FOREIGN KEY (`agent_user_id`) REFERENCES `users`(`id`) ON DELETE SET NULL');
+
     console.log('[auto-migrate] schema check complete — up to date.');
   } catch (err) {
     // Never crash the whole server over a migration hiccup — log loudly so it's

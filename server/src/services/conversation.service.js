@@ -53,12 +53,20 @@ export function normalizeInboundPhone(raw) {
   return `+${digits}`;
 }
 
-export async function listConversations(companyId, { channel, assigned, search } = {}) {
+export async function listConversations(companyId, { channel, assigned, search } = {}, viewer = null) {
   const clauses = ['c.company_id = ?'];
   const params = [companyId];
 
   if (channel && channel !== 'all') { clauses.push('c.channel = ?'); params.push(channel); }
   if (assigned === 'unassigned') clauses.push('c.assigned_to IS NULL');
+  // Same agent-scoping as leads: conversations.assigned_to is never actually set
+  // anywhere in this codebase (always NULL), so the real "who owns this" signal
+  // is the underlying lead's assigned_to — matching how leads are assigned
+  // everywhere else (manual assignment, the drip workflow's Assign Agent step).
+  if (viewer?.companyRole === 'agent') {
+    clauses.push('(l.assigned_to = ? OR l.assigned_to IS NULL)');
+    params.push(viewer.userId);
+  }
   if (search) {
     const like = `%${search}%`;
     clauses.push('(l.name LIKE ? OR l.company LIKE ? OR l.email LIKE ?)');
@@ -104,7 +112,7 @@ export async function getConversationCounts(companyId) {
 
 export async function getThread(companyId, conversationId) {
   const conversation = await one(
-    `SELECT c.*, l.name AS lead_name, l.company AS lead_company, l.email AS lead_email, l.mobile AS lead_mobile
+    `SELECT c.*, l.name AS lead_name, l.company AS lead_company, l.email AS lead_email, l.mobile AS lead_mobile, l.assigned_to AS lead_assigned_to
      FROM conversations c JOIN leads l ON l.id = c.lead_id
      WHERE c.id=? AND c.company_id=? LIMIT 1`,
     [conversationId, companyId]

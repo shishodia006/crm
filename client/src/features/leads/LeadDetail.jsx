@@ -303,6 +303,7 @@ export default function LeadDetail() {
   const [modalEnrollment, setModalEnrollment] = useState(null);
   const [enrollSelect, setEnrollSelect] = useState('');
   const [enrollStatus, setEnrollStatus] = useState('idle'); // idle | enrolling | done
+  const [calling, setCalling] = useState(false);
 
   // `silent` skips the page-level loading flag — used after actions like Enroll
   // that already show their own inline feedback, so refreshing the enrollments
@@ -329,6 +330,19 @@ export default function LeadDetail() {
       toast('Lead deleted.', 'success');
       navigate('/leads');
     } catch (err) { toast(err.message, 'danger'); }
+  };
+
+  const handleCall = async () => {
+    if (calling) return;
+    setCalling(true);
+    try {
+      await api.post(`/api/leads/${id}/call`);
+      toast('Calling your phone now — answer to connect.', 'success');
+    } catch (err) {
+      toast(err.message, 'danger');
+    } finally {
+      setCalling(false);
+    }
   };
 
   const handleEnroll = async () => {
@@ -375,6 +389,9 @@ export default function LeadDetail() {
             ))}
           </div>
         )}
+        <button className="btn btn-outline-success btn-sm" disabled={!lead.mobile || calling} onClick={handleCall}>
+          {calling ? <><span className="spinner-border spinner-border-sm me-1" />Calling…</> : <><i className="bi bi-telephone-fill me-1" />Call</>}
+        </button>
         <button className="btn btn-outline-primary btn-sm" onClick={() => navigate(`/leads/${id}/edit`)}>
           <i className="bi bi-pencil me-1" />Edit
         </button>

@@ -11,8 +11,9 @@ import {
 
 export async function index(req, res) {
   const { channel, assigned, search } = req.query;
+  const viewer = { companyRole: req.companyRole, userId: req.user.id };
   const [conversations, counts] = await Promise.all([
-    listConversations(req.companyId, { channel, assigned, search }),
+    listConversations(req.companyId, { channel, assigned, search }, viewer),
     getConversationCounts(req.companyId),
   ]);
   ok(res, { conversations, counts });
@@ -21,6 +22,11 @@ export async function index(req, res) {
 export async function show(req, res) {
   const data = await getThread(req.companyId, Number(req.params.id));
   if (!data) return fail(res, 'Conversation not found.', 404);
+  // Same agent-scoping as index() — a thread hidden from the list must not be
+  // directly reachable by guessing/incrementing the conversation id in the URL.
+  if (req.companyRole === 'agent' && data.conversation.lead_assigned_to != null && Number(data.conversation.lead_assigned_to) !== Number(req.user.id)) {
+    return fail(res, 'Conversation not found.', 404);
+  }
   ok(res, data);
 }
 

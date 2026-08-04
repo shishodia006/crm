@@ -1,12 +1,14 @@
 import { one, q, run } from '../db/pool.js';
 import { ok, fail } from '../utils/response.js';
-import { hasRole, isAdmin } from '../utils/helpers.js';
 
 export async function index(req, res) {
   const status = req.query.status || 'open'; // open | pending | overdue | completed
   const scope  = req.query.scope  || 'mine'; // mine | all
 
-  const isManagerUp = hasRole(req.user, 'admin', 'superadmin', 'manager');
+  // Per-company role, not the user's global role — the same person can be a
+  // manager in one company and a plain agent in another (see leads/conversations
+  // scoping, which uses the same req.companyRole check).
+  const isManagerUp = ['admin', 'manager'].includes(req.companyRole);
   const useAllScope = scope === 'all' && isManagerUp;
   const userClause  = useAllScope ? '' : 'AND (t.assigned_to = ? OR t.assigned_to IS NULL)';
   const userParams  = useAllScope ? [] : [req.user.id];
@@ -33,13 +35,17 @@ export async function index(req, res) {
   );
 
   // Counts for all 4 tabs: mine (open, assigned to me), overdue (mine subset),
-  // team (open, company-wide), completed (company-wide, all time).
+  // team (open, company-wide), completed (company-wide, all time). An agent
+  // can't actually see the "team"/"completed" scope (isManagerUp above), so
+  // their badge counts shouldn't reveal the true company-wide numbers either.
   const mineFilter = 'AND (t.assigned_to = ? OR t.assigned_to IS NULL)';
+  const teamFilter = isManagerUp ? '' : mineFilter;
+  const teamParams = isManagerUp ? [req.companyId] : [req.companyId, req.user.id];
   const [[{ mine }], [{ overdue }], [{ team }], [{ completed }]] = await Promise.all([
     q(`SELECT COUNT(*) AS mine FROM tasks t WHERE t.company_id=? AND t.done=0 ${mineFilter}`, [req.companyId, req.user.id]),
     q(`SELECT COUNT(*) AS overdue FROM tasks t WHERE t.company_id=? AND t.done=0 AND t.due_at IS NOT NULL AND DATE(t.due_at) < CURDATE() ${mineFilter}`, [req.companyId, req.user.id]),
-    q('SELECT COUNT(*) AS team FROM tasks t WHERE t.company_id=? AND t.done=0', [req.companyId]),
-    q('SELECT COUNT(*) AS completed FROM tasks t WHERE t.company_id=? AND t.done=1', [req.companyId]),
+    q(`SELECT COUNT(*) AS team FROM tasks t WHERE t.company_id=? AND t.done=0 ${teamFilter}`, teamParams),
+    q(`SELECT COUNT(*) AS completed FROM tasks t WHERE t.company_id=? AND t.done=1 ${teamFilter}`, teamParams),
   ]);
 
   ok(res, { tasks, counts: { mine: Number(mine), overdue: Number(overdue), team: Number(team), completed: Number(completed) } });
@@ -71,7 +77,7 @@ export async function markDone(req, res) {
   // able to complete one, not just an admin/manager, or this "Mark as done"
   // click 403s for the exact tasks a regular agent is meant to pick up.
   if (task.assigned_to !== null
-    && !hasRole(req.user, 'admin', 'superadmin', 'manager') && task.assigned_to !== req.user.id && task.created_by !== req.user.id) {
+    && !['admin', 'manager'].includes(req.companyRole) && task.assigned_to !== req.user.id && task.created_by !== req.user.id) {
     return fail(res, 'Forbidden.', 403);
   }
   await run('UPDATE tasks SET done=1, done_at=NOW() WHERE id=? AND company_id=?', [Number(req.params.id), req.companyId]);
@@ -81,7 +87,7 @@ export async function markDone(req, res) {
 export async function destroy(req, res) {
   const task = await one('SELECT * FROM tasks WHERE id=? AND company_id=? LIMIT 1', [Number(req.params.id), req.companyId]);
   if (!task) return fail(res, 'Task not found.', 404);
-  if (!isAdmin(req.user) && task.assigned_to !== req.user.id && task.created_by !== req.user.id) {
+  if (req.companyRole !== 'admin' && task.assigned_to !== req.user.id && task.created_by !== req.user.id) {
     return fail(res, 'Forbidden.', 403);
   }
   await run('DELETE FROM tasks WHERE id=? AND company_id=?', [Number(req.params.id), req.companyId]);

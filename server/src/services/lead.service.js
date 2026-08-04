@@ -128,6 +128,21 @@ export async function findLeadByEmailOrMobile(email = '', mobile = '', companyId
   return one(`SELECT * FROM leads WHERE ${contactClause}${companyId ? ' AND company_id = ?' : ''} ORDER BY created_at ASC LIMIT 1`, params, db);
 }
 
+// Least-loaded active agent/manager in this company — shared by the drip
+// engine's "Assign Agent" step (drip.service.js) and inbound call routing
+// (call.service.js) so both paths land the same lead on the same agent.
+export async function pickLeastLoadedAgent(companyId) {
+  const agent = await one(
+    `SELECT u.id FROM users u
+     JOIN company_users cu ON cu.user_id = u.id
+     LEFT JOIN leads l ON l.assigned_to = u.id AND l.company_id = ?
+     WHERE cu.company_id = ? AND u.role IN ('agent','manager') AND u.is_active=1
+     GROUP BY u.id ORDER BY COUNT(l.id) ASC LIMIT 1`,
+    [companyId, companyId]
+  );
+  return agent?.id ? Number(agent.id) : null;
+}
+
 export async function insertLead(data, conn = undefined) {
   const { pool } = await import('../db/pool.js');
   const db = conn || pool;
@@ -214,29 +229,37 @@ export async function processLead(rawData, sourceId, campaignId, req, conn = und
 
 export async function leadTimeline(leadId) {
   return q(
-    `SELECT 'communication' AS entity, id, channel AS subtype, status, created_at,
-            COALESCE(subject, channel) AS summary, NULL AS user_name, failed_reason AS detail,
-            enrollment_id
-     FROM communications WHERE lead_id = ?
+    `SELECT 'communication' AS entity, c.id, c.channel AS subtype, c.status, c.created_at,
+            COALESCE(c.subject, c.channel) AS summary, au.name AS user_name, c.failed_reason AS detail,
+            c.enrollment_id, c.direction, c.duration_seconds
+     FROM communications c LEFT JOIN users au ON au.id = c.agent_user_id WHERE c.lead_id = ?
      UNION ALL
-     SELECT 'activity', a.id, a.type, NULL, a.created_at, a.subject, u.name, NULL, NULL
+     SELECT 'activity', a.id, a.type, NULL, a.created_at, a.subject, u.name, NULL, NULL, NULL, NULL
      FROM activities a LEFT JOIN users u ON u.id = a.user_id WHERE a.lead_id = ?
      UNION ALL
      SELECT 'score_event', id, event, NULL, created_at,
-            CONCAT(IF(delta>0,'+',''), delta, ' pts (', score_after, ' total)'), NULL, NULL, NULL
+            CONCAT(IF(delta>0,'+',''), delta, ' pts (', score_after, ' total)'), NULL, NULL, NULL, NULL, NULL
      FROM lead_score_events WHERE lead_id = ?
      ORDER BY created_at DESC`,
     [leadId, leadId, leadId]
   );
 }
 
-export async function listLeads(filters = {}, page = 1, perPage = config.perPage, companyId = null) {
+export async function listLeads(filters = {}, page = 1, perPage = config.perPage, companyId = null, viewer = null) {
   // is_duplicate=1 rows are a re-sync/re-import hitting the same contact within
   // the dedup window (processLead) — they're logged for traceability but aren't
   // separate leads, so the main list shouldn't show the same person twice.
   const where = ['1=1', 'l.is_duplicate = 0'];
   const params = [];
   if (companyId) { where.push('l.company_id = ?'); params.push(Number(companyId)); }
+  // An 'agent' only sees leads assigned to them (or not yet assigned to anyone,
+  // so unclaimed leads are still visible to pick up) — admin/manager/superadmin
+  // see the full company list. Keyed off the per-company role, since the same
+  // user can be an admin in one company and just an agent in another.
+  if (viewer?.companyRole === 'agent') {
+    where.push('(l.assigned_to = ? OR l.assigned_to IS NULL)');
+    params.push(viewer.userId);
+  }
   if (filters.search) {
     const s = `%${filters.search}%`;
     where.push('(l.name LIKE ? OR l.email LIKE ? OR l.mobile LIKE ? OR l.company LIKE ?)');

@@ -45,6 +45,19 @@ export async function resolveCompanyByShopDomain(shopDomain) {
   return companyId ? Number(companyId) : null;
 }
 
+// Twilio's "A call comes in" webhook (shared by every company's purchased
+// number, configured once in the Twilio console) carries no company-identifying
+// header — the dialed number itself (E.164, in the request's `To` field) is the
+// only signal. Mirrors resolveCompanyByShopDomain(), not the encrypted-loop
+// resolveCompanyByAnantyaKey() — twilio_phone_number is stored unencrypted
+// (doesn't match isSensitive()'s _pass/_pwd/_key/_secret/_token suffix pattern),
+// so a direct SQL match is enough.
+export async function resolveCompanyByTwilioNumber(toNumber) {
+  if (!toNumber) return null;
+  const companyId = await scalar("SELECT company_id FROM company_settings WHERE `key`='twilio_phone_number' AND `value`=? LIMIT 1", [toNumber]);
+  return companyId ? Number(companyId) : null;
+}
+
 // Several webhook-receiving integrations (HubSpot, Mailchimp, Zendesk, and now
 // IndiaMart/Meta/Google Ads below) resolve which company a callback belongs to
 // via a random key embedded in the webhook URL itself, since the sender either

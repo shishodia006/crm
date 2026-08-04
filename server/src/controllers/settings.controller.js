@@ -168,7 +168,7 @@ export async function getIntegrations(req, res) {
   ]);
   const [integrations, settingsRows] = await Promise.all([
     q('SELECT * FROM integrations WHERE company_id=? ORDER BY type,name', [req.companyId]),
-    companySettings(req.companyId, ['email','whatsapp','sms','rcs','general','sources'])
+    companySettings(req.companyId, ['email','whatsapp','sms','rcs','voice','general','sources'])
   ]);
   ok(res, { integrations, settings: settingsRows.values });
 }
@@ -185,7 +185,9 @@ export async function saveIntegrations(req, res) {
     wa_anantya_api_user: 'whatsapp', wa_anantya_waba_id: 'whatsapp',
     sms_provider: 'sms', sms_mshastra_url: 'sms', sms_mshastra_user: 'sms', sms_mshastra_pwd: 'sms', sms_mshastra_sender: 'sms', sms_mshastra_country: 'sms',
     sms_api_key: 'sms', sms_api_url: 'sms', sms_sender: 'sms',
-    rcs_api_key: 'rcs', indiamart_key: 'sources', tradeindia_key: 'sources',
+    rcs_api_key: 'rcs',
+    twilio_account_sid: 'voice', twilio_auth_token: 'voice', twilio_phone_number: 'voice',
+    indiamart_key: 'sources', tradeindia_key: 'sources',
     tradeindia_user: 'sources', meta_ads_token: 'sources', meta_ads_secret: 'sources', meta_verify_token: 'sources',
     google_ads_webhook_secret: 'sources', linkedin_oauth_client_id: 'sources', linkedin_oauth_client_secret: 'sources',
     linkedin_org_urn: 'sources', justdial_api_key: 'sources', justdial_login: 'sources', ai_api_url: 'ai', ai_api_key: 'ai',
@@ -247,7 +249,7 @@ export async function syncLeadSource(req, res) {
 }
 
 export async function channelMetrics(req, res) {
-  const channel = ['email', 'whatsapp', 'sms', 'rcs'].includes(req.query.channel) ? req.query.channel : 'email';
+  const channel = ['email', 'whatsapp', 'sms', 'rcs', 'call'].includes(req.query.channel) ? req.query.channel : 'email';
   const row = await one(
     `SELECT COUNT(*) AS sent,
             SUM(cm.status IN ('delivered','opened','clicked','replied')) AS delivered,

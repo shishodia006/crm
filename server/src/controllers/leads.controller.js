@@ -7,6 +7,14 @@ import { csvEscape } from '../utils/helpers.js';
 import { listLeads, processLead, leadTimeline, normalizeImportRow, findLeadByEmailOrMobile, normalizeMobile } from '../services/lead.service.js';
 import { enrollLead } from '../services/drip.service.js';
 import { addScoreEvent } from '../services/score.service.js';
+import { initiateOutboundCall } from '../services/call.service.js';
+
+const CALL_ERROR_MESSAGES = {
+  twilio_not_configured: 'Twilio Voice is not configured for your company yet. Ask an admin to set it up in Settings → Channels → Voice.',
+  lead_mobile_invalid: 'This lead has no valid mobile number to call.',
+  agent_phone_not_set: 'Add your phone number in Profile Settings before making calls.',
+  agent_phone_invalid: 'Your phone number in Profile Settings looks invalid — include the country code (e.g. +9198xxxxxxxx).',
+};
 
 export async function index(req, res) {
   const page = Math.max(1, Number(req.query.page || 1));
@@ -17,7 +25,7 @@ export async function index(req, res) {
     assigned: req.query.assigned || '', date_from: req.query.date_from || '', date_to: req.query.date_to || ''
   };
   const [pagination, sources, agents] = await Promise.all([
-    listLeads(filters, page, perPage, req.companyId),
+    listLeads(filters, page, perPage, req.companyId, { companyRole: req.companyRole, userId: req.user.id }),
     q("SELECT id,name FROM lead_sources WHERE is_active=1 ORDER BY CASE WHEN slug='manual' THEN 0 ELSE 1 END, name"),
     q("SELECT u.id,u.name FROM users u JOIN company_users cu ON cu.user_id=u.id WHERE cu.company_id=? AND u.role IN ('agent','manager') AND u.is_active=1 ORDER BY u.name", [req.companyId])
   ]);
@@ -43,10 +51,14 @@ export async function checkDuplicate(req, res) {
 }
 
 export async function exportCsv(req, res) {
+  // Must match index()'s agent-scoping — otherwise an agent who can't see another
+  // agent's leads in the list UI could still export every lead in the company.
+  const scopeClause = req.companyRole === 'agent' ? 'AND (l.assigned_to = ? OR l.assigned_to IS NULL)' : '';
+  const params = req.companyRole === 'agent' ? [req.companyId, req.user.id] : [req.companyId];
   const leads = await q(
     `SELECT l.name,l.email,l.mobile,l.company,l.designation,l.industry,l.city,l.state,l.country,l.score,l.category,l.status,ls.name AS source,l.created_at
-     FROM leads l LEFT JOIN lead_sources ls ON ls.id=l.source_id WHERE l.company_id=? ORDER BY l.created_at DESC`,
-    [req.companyId]
+     FROM leads l LEFT JOIN lead_sources ls ON ls.id=l.source_id WHERE l.company_id=? ${scopeClause} ORDER BY l.created_at DESC`,
+    params
   );
   const header = ['Name','Email','Mobile','Company','Designation','Industry','City','State','Country','Score','Category','Status','Source','Created At'];
   const rows = [header, ...leads.map((row) => Object.values(row))].map((row) => row.map(csvEscape).join(',')).join('\r\n');
@@ -57,11 +69,14 @@ export async function exportCsv(req, res) {
 
 export async function show(req, res) {
   const leadId = Number(req.params.id);
+  // Same agent-scoping as index()/exportCsv() — hiding a lead from the list but
+  // still allowing direct access via /leads/:id would defeat the restriction.
+  const scopeAgent = req.companyRole === 'agent';
   const lead = await one(
     `SELECT l.*, ls.name AS source_name, u.name AS assigned_name
      FROM leads l LEFT JOIN lead_sources ls ON ls.id=l.source_id LEFT JOIN users u ON u.id=l.assigned_to
-     WHERE l.id=? AND l.company_id=? LIMIT 1`,
-    [leadId, req.companyId]
+     WHERE l.id=? AND l.company_id=? ${scopeAgent ? 'AND (l.assigned_to = ? OR l.assigned_to IS NULL)' : ''} LIMIT 1`,
+    scopeAgent ? [leadId, req.companyId, req.user.id] : [leadId, req.companyId]
   );
   if (!lead) return fail(res, 'Lead not found.', 404);
   const [timeline, campaigns, agents, sources, enrollments, scoreHistory, tags] = await Promise.all([
@@ -93,7 +108,11 @@ export async function update(req, res) {
   }
 
   const leadId = Number(req.params.id);
-  const exists = await one('SELECT id,name,company,source_id,status FROM leads WHERE id=? AND company_id=? LIMIT 1', [leadId, req.companyId]);
+  const scopeAgent = req.companyRole === 'agent';
+  const exists = await one(
+    `SELECT id,name,company,source_id,status FROM leads WHERE id=? AND company_id=? ${scopeAgent ? 'AND (assigned_to = ? OR assigned_to IS NULL)' : ''} LIMIT 1`,
+    scopeAgent ? [leadId, req.companyId, req.user.id] : [leadId, req.companyId]
+  );
   if (!exists) return fail(res, 'Lead not found.', 404);
   await updateById('leads', leadId, data);
 
@@ -120,7 +139,11 @@ export async function update(req, res) {
 }
 
 export async function destroy(req, res) {
-  await run('DELETE FROM leads WHERE id=? AND company_id=?', [Number(req.params.id), req.companyId]);
+  const scopeAgent = req.companyRole === 'agent';
+  await run(
+    `DELETE FROM leads WHERE id=? AND company_id=? ${scopeAgent ? 'AND (assigned_to = ? OR assigned_to IS NULL)' : ''}`,
+    scopeAgent ? [Number(req.params.id), req.companyId, req.user.id] : [Number(req.params.id), req.companyId]
+  );
   ok(res, null, 'Lead deleted.');
 }
 
@@ -312,9 +335,29 @@ export async function addScore(req, res) {
 }
 
 export async function timeline(req, res) {
-  const lead = await one('SELECT id FROM leads WHERE id=? AND company_id=? LIMIT 1', [Number(req.params.id), req.companyId]);
+  const leadId = Number(req.params.id);
+  // Same agent-scoping as show()/update()/destroy() — this is exactly the
+  // endpoint that surfaces call history, so it must follow the same rule.
+  const scopeAgent = req.companyRole === 'agent';
+  const lead = await one(
+    `SELECT id FROM leads WHERE id=? AND company_id=? ${scopeAgent ? 'AND (assigned_to = ? OR assigned_to IS NULL)' : ''} LIMIT 1`,
+    scopeAgent ? [leadId, req.companyId, req.user.id] : [leadId, req.companyId]
+  );
   if (!lead) return fail(res, 'Lead not found.', 404);
-  ok(res, await leadTimeline(Number(req.params.id)));
+  ok(res, await leadTimeline(leadId));
+}
+
+export async function call(req, res) {
+  const leadId = Number(req.params.id);
+  const scopeAgent = req.companyRole === 'agent';
+  const lead = await one(
+    `SELECT id FROM leads WHERE id=? AND company_id=? ${scopeAgent ? 'AND (assigned_to = ? OR assigned_to IS NULL)' : ''} LIMIT 1`,
+    scopeAgent ? [leadId, req.companyId, req.user.id] : [leadId, req.companyId]
+  );
+  if (!lead) return fail(res, 'Lead not found.', 404);
+  const result = await initiateOutboundCall(leadId, req.companyId, req.user);
+  if (!result.delivered) return fail(res, CALL_ERROR_MESSAGES[result.error] || `Call could not be started: ${result.error}`, 422);
+  ok(res, { comm_id: result.comm_id, call_sid: result.call_sid }, 'Calling your phone now — answer to connect.');
 }
 
 export async function enrollmentDetail(req, res) {

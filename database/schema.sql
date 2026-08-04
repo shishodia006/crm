@@ -321,7 +321,7 @@ CREATE TABLE IF NOT EXISTS `communications` (
   `lead_id`        INT UNSIGNED NOT NULL,
   `enrollment_id`  INT UNSIGNED DEFAULT NULL,
   `step_id`        INT UNSIGNED DEFAULT NULL,
-  `channel`        ENUM('email','whatsapp','rcs','sms') NOT NULL,
+  `channel`        ENUM('email','whatsapp','rcs','sms','call') NOT NULL,
   `template_id`    INT UNSIGNED DEFAULT NULL,
   `to_address`     VARCHAR(255) NOT NULL,   -- email or phone
   `subject`        VARCHAR(255) DEFAULT NULL,
@@ -329,7 +329,8 @@ CREATE TABLE IF NOT EXISTS `communications` (
   `provider`       VARCHAR(60) DEFAULT NULL,  -- sendgrid, ses, mailgun, twilio, etc.
   `provider_msg_id`VARCHAR(255) DEFAULT NULL, -- provider's message ID for tracking
   `status`         ENUM('queued','sent','delivered','opened','clicked','replied',
-                        'bounced','failed','unsubscribed') NOT NULL DEFAULT 'queued',
+                        'bounced','failed','unsubscribed',
+                        'ringing','in_progress','no_answer','busy','canceled','completed') NOT NULL DEFAULT 'queued',
   `sent_at`        DATETIME DEFAULT NULL,
   `delivered_at`   DATETIME DEFAULT NULL,
   `opened_at`      DATETIME DEFAULT NULL,
@@ -337,16 +338,22 @@ CREATE TABLE IF NOT EXISTS `communications` (
   `replied_at`     DATETIME DEFAULT NULL,
   `failed_reason`  VARCHAR(500) DEFAULT NULL,
   `metadata`       JSON DEFAULT NULL,
+  `direction`        ENUM('outbound','inbound') NOT NULL DEFAULT 'outbound',
+  `duration_seconds` INT UNSIGNED DEFAULT NULL,  -- talk time of the human<->human leg, calls only
+  `recording_url`    VARCHAR(500) DEFAULT NULL,
+  `agent_user_id`    INT UNSIGNED DEFAULT NULL,  -- which agent was on a call (calls only; sends have no such concept)
   `created_at`     DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   FOREIGN KEY (`lead_id`)       REFERENCES `leads`(`id`)          ON DELETE CASCADE,
   FOREIGN KEY (`enrollment_id`) REFERENCES `lead_enrollments`(`id`) ON DELETE SET NULL,
   FOREIGN KEY (`step_id`)       REFERENCES `workflow_steps`(`id`) ON DELETE SET NULL,
   FOREIGN KEY (`template_id`)   REFERENCES `templates`(`id`)      ON DELETE SET NULL,
+  FOREIGN KEY (`agent_user_id`) REFERENCES `users`(`id`)          ON DELETE SET NULL,
   INDEX `idx_lead`       (`lead_id`),
   INDEX `idx_channel`    (`channel`),
   INDEX `idx_status`     (`status`),
   INDEX `idx_provider_id`(`provider_msg_id`),
-  INDEX `idx_created`    (`created_at`)
+  INDEX `idx_created`    (`created_at`),
+  INDEX `idx_agent`      (`agent_user_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS `email_link_clicks` (
