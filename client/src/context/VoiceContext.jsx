@@ -2,6 +2,7 @@ import { createContext, useState, useEffect, useRef, useCallback } from 'react';
 import { Device } from '@twilio/voice-sdk';
 import { api } from '../services/api.js';
 import { useAuth } from '../hooks/useAuth.js';
+import { playRingtone } from '../utils/sound.js';
 
 export const VoiceContext = createContext(null);
 
@@ -16,6 +17,17 @@ export function VoiceProvider({ children }) {
   const deviceRef = useRef(null);
   const activeCallRef = useRef(null);
   const timerRef = useRef(null);
+  const callAttemptRef = useRef(0);
+  const ringtoneRef = useRef(null);
+
+  const stopRingtone = () => {
+    ringtoneRef.current?.stop();
+    ringtoneRef.current = null;
+  };
+  const startRingtone = (kind) => {
+    stopRingtone();
+    ringtoneRef.current = playRingtone(kind);
+  };
 
   const [configured, setConfigured] = useState(false);
   const [status, setStatus] = useState('idle'); // idle | incoming | connecting | in-call
@@ -35,6 +47,7 @@ export function VoiceProvider({ children }) {
 
   const resetCallState = useCallback(() => {
     stopTimer();
+    stopRingtone();
     activeCallRef.current = null;
     setStatus('idle');
     setCallerInfo(null);
@@ -42,7 +55,7 @@ export function VoiceProvider({ children }) {
   }, []);
 
   const wireCallEvents = useCallback((call) => {
-    call.on('accept', () => { setStatus('in-call'); startTimer(); });
+    call.on('accept', () => { stopRingtone(); setStatus('in-call'); startTimer(); });
     call.on('disconnect', resetCallState);
     call.on('cancel', resetCallState);
     call.on('reject', resetCallState);
@@ -77,6 +90,7 @@ export function VoiceProvider({ children }) {
           leadName: call.customParameters?.get('leadName') || 'Unknown caller',
         });
         setStatus('incoming');
+        startRingtone('incoming');
         wireCallEvents(call);
       });
 
@@ -90,23 +104,63 @@ export function VoiceProvider({ children }) {
     };
   }, [user, wireCallEvents]);
 
+  // How long to wait for device.connect() to resolve before giving up. This
+  // normally resolves in well under a second, but it internally waits on the
+  // browser's getUserMedia() mic-permission prompt first — if that prompt is
+  // ignored, dismissed, or the mic is blocked, connect() just hangs forever
+  // with no error, and (before this fix) there was no Call object yet for the
+  // hangup button to act on, so the widget looked permanently stuck.
+  const CONNECT_TIMEOUT_MS = 20000;
+
   const callLead = useCallback(async (leadId, leadName) => {
     if (!deviceRef.current) throw new Error('Voice calling is not set up for your company yet — ask an admin to configure it in Settings → Channels → Voice.');
     if (status !== 'idle') throw new Error('You are already on a call.');
     const { comm_id: commId } = await api.post(`/api/leads/${leadId}/call`);
     setCallerInfo({ leadId: String(leadId), leadName: leadName || 'Lead' });
     setStatus('connecting');
-    const call = await deviceRef.current.connect({ params: { commId: String(commId) } });
+    startRingtone('ringback');
+    const attemptId = ++callAttemptRef.current;
+
+    let call;
+    try {
+      call = await Promise.race([
+        deviceRef.current.connect({ params: { commId: String(commId) } }),
+        new Promise((_, reject) => setTimeout(
+          () => reject(new Error('Could not start the call — check that you allowed microphone access for this site, then try again.')),
+          CONNECT_TIMEOUT_MS
+        )),
+      ]);
+    } catch (err) {
+      // A stale attempt (user already hit Cancel, or a newer call started)
+      // shouldn't clobber whatever state came after it.
+      if (callAttemptRef.current === attemptId) resetCallState();
+      throw err;
+    }
+
+    // The device.connect() call itself finally resolved after we'd already
+    // given up on it (timeout fired, or the user cancelled) — hang up the
+    // now-unwanted call immediately instead of silently going live.
+    if (callAttemptRef.current !== attemptId) {
+      call.disconnect();
+      return;
+    }
     activeCallRef.current = call;
     wireCallEvents(call);
-  }, [status, wireCallEvents]);
+  }, [status, wireCallEvents, resetCallState]);
 
   const answer = useCallback(() => activeCallRef.current?.accept(), []);
   const reject = useCallback(() => {
     activeCallRef.current?.reject();
     resetCallState();
   }, [resetCallState]);
-  const hangup = useCallback(() => activeCallRef.current?.disconnect(), []);
+  // Always resets the UI, even if there's no live Call object yet (e.g. still
+  // stuck inside device.connect() waiting on mic permission) — otherwise the
+  // widget has no way to be dismissed and looks permanently stuck.
+  const hangup = useCallback(() => {
+    callAttemptRef.current += 1;
+    activeCallRef.current?.disconnect();
+    resetCallState();
+  }, [resetCallState]);
   const toggleMute = useCallback(() => {
     const call = activeCallRef.current;
     if (!call) return;
