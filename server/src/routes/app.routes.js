@@ -23,6 +23,7 @@ import * as broadcasts from '../controllers/broadcasts.controller.js';
 import * as segments from '../controllers/segments.controller.js';
 import * as companyDirectory from '../controllers/companyDirectory.controller.js';
 import * as thirdPartyApps from '../controllers/thirdPartyApps.controller.js';
+import * as voice from '../controllers/twilioVoice.controller.js';
 
 const router = Router();
 const upload = multer({
@@ -69,6 +70,7 @@ router.post('/leads/bulk-enroll', requireAuth, requireCompanyRole('agent'), asyn
 router.post('/leads/:id/score', requireAuth, asyncRoute(leads.addScore));
 router.get('/leads/:id/timeline', requireAuth, asyncRoute(leads.timeline));
 router.post('/leads/:id/call', requireAuth, requireCompanyRole('agent'), asyncRoute(leads.call));
+router.get('/voice/token', requireAuth, requireCompanyRole('agent'), asyncRoute(voice.voiceToken));
 router.get('/leads/:id/enrollments/:eid', requireAuth, asyncRoute(leads.enrollmentDetail));
 
 // Campaigns

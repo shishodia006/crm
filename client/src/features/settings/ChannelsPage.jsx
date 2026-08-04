@@ -65,6 +65,10 @@ const PROVIDER_FIELDS = {
     { name: 'twilio_account_sid', label: 'Account SID' },
     { name: 'twilio_auth_token', label: 'Auth Token', type: 'password' },
     { name: 'twilio_phone_number', label: 'Twilio Phone Number (E.164, e.g. +14155551234)' },
+    { name: 'twilio_api_key_sid', label: 'API Key SID' },
+    { name: 'twilio_api_key_secret', label: 'API Key Secret', type: 'password' },
+    { name: 'twilio_twiml_app_sid', label: 'TwiML Application SID' },
+    { name: 'twilio_record_calls', label: 'Record calls', type: 'checkbox' },
   ],
 };
 const GENERIC_SMS_FIELDS = [
@@ -170,20 +174,35 @@ export default function ChannelsPage() {
 
               {fields.map((f) => (
                 <div className="mb-3" key={f.name}>
-                  <label className="crm-label">{f.label}</label>
-                  {f.type === 'password' ? (
-                    <PasswordInput className="crm-input" value={settings[f.name] ?? ''} onChange={(e) => setField(f.name, e.target.value)} />
+                  {f.type === 'checkbox' ? (
+                    <div className="form-check">
+                      <input
+                        type="checkbox" className="form-check-input" id={`field-${f.name}`}
+                        checked={settings[f.name] === '1'}
+                        onChange={(e) => setField(f.name, e.target.checked ? '1' : '0')}
+                      />
+                      <label className="form-check-label crm-label mb-0" htmlFor={`field-${f.name}`}>{f.label}</label>
+                    </div>
                   ) : (
-                    <input type={f.type || 'text'} className="crm-input" value={settings[f.name] ?? ''} onChange={(e) => setField(f.name, e.target.value)} />
+                    <>
+                      <label className="crm-label">{f.label}</label>
+                      {f.type === 'password' ? (
+                        <PasswordInput className="crm-input" value={settings[f.name] ?? ''} onChange={(e) => setField(f.name, e.target.value)} />
+                      ) : (
+                        <input type={f.type || 'text'} className="crm-input" value={settings[f.name] ?? ''} onChange={(e) => setField(f.name, e.target.value)} />
+                      )}
+                    </>
                   )}
                 </div>
               ))}
 
               {channel === 'call' && (
                 <div className="text-11 text-muted-2 mb-3">
-                  After saving, open this number in your Twilio Console → Phone Numbers → Voice Configuration →
-                  "A call comes in" → Webhook, and set it to <code>{`${window.location.origin}/webhook/twilio/voice/inbound`}</code> (HTTP POST) —
-                  this one-time step isn't done automatically.
+                  Two one-time steps in your Twilio Console after saving:
+                  <br />1. Phone Numbers → your number → Voice Configuration → "A call comes in" → Webhook →{' '}
+                  <code>{`${window.location.origin}/webhook/twilio/voice/inbound`}</code> (HTTP POST).
+                  <br />2. Voice → TwiML Apps → Create new → Voice Request URL →{' '}
+                  <code>{`${window.location.origin}/webhook/twilio/voice/browser-outbound`}</code> (HTTP POST) — then paste that app's SID into "TwiML Application SID" above.
                 </div>
               )}
 

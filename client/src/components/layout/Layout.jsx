@@ -9,6 +9,7 @@ import { PageHeaderContext } from '../../context/PageHeaderContext.jsx';
 import { playNotificationSound } from '../../utils/sound.js';
 import GreetingToast from '../common/GreetingToast.jsx';
 import PhoneField from '../common/PhoneField.jsx';
+import VoiceWidget from '../voice/VoiceWidget.jsx';
 
 /* ── Page title map ─────────────────────────────────────── */
 const PAGE_TITLES = {
@@ -578,6 +579,7 @@ export default function Layout() {
 
       <NewLeadDrawer open={drawerOpen} onClose={() => setDrawerOpen(false)} onCreated={handleLeadCreated} />
       <GreetingToast />
+      <VoiceWidget />
     </div>
     </PageHeaderContext.Provider>
   );

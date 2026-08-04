@@ -1,22 +1,32 @@
 import { one } from '../db/pool.js';
-import { fail } from '../utils/response.js';
+import { ok, fail } from '../utils/response.js';
 import { resolveCompanyByTwilioNumber, getSetting } from '../services/settings.service.js';
 import {
-  validateTwilioSignature, getTwilioConfig, buildOutboundConnectTwiml,
-  buildInboundRouteTwiml, recordDialOutcome, recordParentCallStatus, logTwilioWebhook,
+  validateTwilioSignature, getTwilioConfig, getVoiceAccessToken, buildBrowserOutboundTwiml,
+  buildInboundRouteTwiml, recordDialOutcome, recordRecordingStatus, logTwilioWebhook,
 } from '../services/call.service.js';
 
-// GET/POST /webhook/twilio/voice/outbound/:commId — Twilio requests this the
-// instant the agent's own phone answers (see initiateOutboundCall()).
-export async function outboundTwiml(req, res) {
-  const commId = Number(req.params.commId);
+// GET /api/voice/token — authenticated. Each agent's browser calls this to
+// register a Twilio Voice SDK Device. `configured:false` means this company
+// hasn't set up Voice calling yet — the frontend just skips Device
+// registration silently, no error shown.
+export async function voiceToken(req, res) {
+  const result = await getVoiceAccessToken(req.companyId, req.user);
+  if (!result) return ok(res, { configured: false });
+  ok(res, { configured: true, token: result.token, identity: result.identity });
+}
+
+// POST /webhook/twilio/voice/browser-outbound — Twilio's TwiML Application
+// hits this the instant Device.connect() fires from the agent's browser.
+export async function browserOutboundTwiml(req, res) {
+  const commId = Number(req.body.commId);
   const comm = await one(
     'SELECT c.id, l.company_id FROM communications c JOIN leads l ON l.id=c.lead_id WHERE c.id=? LIMIT 1',
     [commId]
   );
   const twilioCfg = comm ? await getTwilioConfig(comm.company_id) : null;
   if (!validateTwilioSignature(req, twilioCfg?.authToken)) return fail(res, 'Invalid Twilio signature.', 403);
-  const xml = await buildOutboundConnectTwiml(commId);
+  const xml = comm ? await buildBrowserOutboundTwiml(commId, comm.company_id) : '<Response><Say>This call could not be connected.</Say><Hangup/></Response>';
   await logTwilioWebhook(req.body?.CallStatus, req.body, 'processed');
   res.type('text/xml').send(xml);
 }
@@ -44,10 +54,11 @@ export async function dialStatus(req, res) {
   res.type('text/xml').send('<Response></Response>');
 }
 
-// POST /webhook/twilio/voice/status/:commId — outer statusCallback, outbound only.
-export async function parentStatus(req, res) {
+// POST /webhook/twilio/voice/recording-status/:commId — fires once a recording
+// finishes processing, asynchronously and later than dial-status.
+export async function recordingStatus(req, res) {
   const commId = Number(req.params.commId);
-  await recordParentCallStatus(commId, req.body);
-  await logTwilioWebhook(req.body?.CallStatus, req.body, 'processed');
+  await recordRecordingStatus(commId, req.body);
+  await logTwilioWebhook(req.body?.RecordingStatus, req.body, 'processed');
   res.sendStatus(200);
 }

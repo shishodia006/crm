@@ -16,9 +16,9 @@ router.post('/ingest/:source', asyncRoute(pub.ingest));
 // Twilio Voice — 4/5-segment paths, so they never collide with the generic
 // 2/3-segment /webhook/:source[/:webhookKey] routes below regardless of order.
 router.all('/webhook/twilio/voice/inbound', asyncRoute(voice.inboundTwiml));
-router.all('/webhook/twilio/voice/outbound/:commId', asyncRoute(voice.outboundTwiml));
+router.all('/webhook/twilio/voice/browser-outbound', asyncRoute(voice.browserOutboundTwiml));
 router.all('/webhook/twilio/voice/dial-status/:commId', asyncRoute(voice.dialStatus));
-router.all('/webhook/twilio/voice/status/:commId', asyncRoute(voice.parentStatus));
+router.all('/webhook/twilio/voice/recording-status/:commId', asyncRoute(voice.recordingStatus));
 
 router.all('/webhook/:source', asyncRoute(pub.webhook));
 router.all('/webhook/:source/:webhookKey', asyncRoute(pub.webhook));

@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { api } from '../../services/api.js';
 import { useToast } from '../../hooks/useToast.js';
 import { useConfirm } from '../../hooks/useConfirm.js';
+import { useVoice } from '../../hooks/useVoice.js';
 import LoadingBox from '../../components/common/LoadingBox.jsx';
 import { formatDateTime, scoreClass, scoreLabel } from '../../utils/formatters.js';
 
@@ -295,6 +296,7 @@ export default function LeadDetail() {
   const navigate = useNavigate();
   const toast = useToast();
   const confirm = useConfirm();
+  const { callLead, status: voiceStatus } = useVoice();
   const [lead, setLead]             = useState(null);
   const [campaigns, setCampaigns]   = useState([]);
   const [enrollments, setEnrollments] = useState([]);
@@ -336,8 +338,9 @@ export default function LeadDetail() {
     if (calling) return;
     setCalling(true);
     try {
-      await api.post(`/api/leads/${id}/call`);
-      toast('Calling your phone now — answer to connect.', 'success');
+      // The VoiceWidget (global, in Layout.jsx) takes over from here, showing
+      // "Calling…" then the in-call bar — no toast needed for the happy path.
+      await callLead(id, lead.name);
     } catch (err) {
       toast(err.message, 'danger');
     } finally {
@@ -389,7 +392,12 @@ export default function LeadDetail() {
             ))}
           </div>
         )}
-        <button className="btn btn-outline-success btn-sm" disabled={!lead.mobile || calling} onClick={handleCall}>
+        <button
+          className="btn btn-outline-success btn-sm"
+          disabled={!lead.mobile || calling || voiceStatus !== 'idle'}
+          title={voiceStatus !== 'idle' ? 'You are already on a call' : undefined}
+          onClick={handleCall}
+        >
           {calling ? <><span className="spinner-border spinner-border-sm me-1" />Calling…</> : <><i className="bi bi-telephone-fill me-1" />Call</>}
         </button>
         <button className="btn btn-outline-primary btn-sm" onClick={() => navigate(`/leads/${id}/edit`)}>

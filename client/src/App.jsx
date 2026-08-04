@@ -2,6 +2,7 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider } from './context/AuthContext.jsx';
 import { ToastProvider } from './context/ToastContext.jsx';
 import { ConfirmProvider } from './context/ConfirmContext.jsx';
+import { VoiceProvider } from './context/VoiceContext.jsx';
 import { useAuth } from './hooks/useAuth.js';
 import Layout from './components/layout/Layout.jsx';
 import LoadingBox from './components/common/LoadingBox.jsx';
@@ -61,6 +62,7 @@ export default function App() {
     <AuthProvider>
       <ToastProvider>
         <ConfirmProvider>
+        <VoiceProvider>
         <BrowserRouter>
           <Routes>
             {/* Guest routes */}
@@ -138,6 +140,7 @@ export default function App() {
             <Route path="*" element={<Navigate to="/dashboard" replace />} />
           </Routes>
         </BrowserRouter>
+        </VoiceProvider>
         </ConfirmProvider>
       </ToastProvider>
     </AuthProvider>
