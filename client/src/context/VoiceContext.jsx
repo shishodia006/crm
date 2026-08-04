@@ -2,6 +2,7 @@ import { createContext, useState, useEffect, useRef, useCallback } from 'react';
 import { Device } from '@twilio/voice-sdk';
 import { api } from '../services/api.js';
 import { useAuth } from '../hooks/useAuth.js';
+import { useToast } from '../hooks/useToast.js';
 import { playRingtone } from '../utils/sound.js';
 
 export const VoiceContext = createContext(null);
@@ -14,11 +15,13 @@ export const VoiceContext = createContext(null);
 // companies won't have this set up, so no error should ever surface here.
 export function VoiceProvider({ children }) {
   const { user } = useAuth();
+  const toast = useToast();
   const deviceRef = useRef(null);
   const activeCallRef = useRef(null);
   const timerRef = useRef(null);
   const callAttemptRef = useRef(0);
   const ringtoneRef = useRef(null);
+  const lastDeviceErrorToastRef = useRef(0);
 
   const stopRingtone = () => {
     ringtoneRef.current?.stop();
@@ -80,6 +83,23 @@ export function VoiceProvider({ children }) {
         } catch { /* next expiry cycle will retry */ }
       });
 
+      // Without this, a Device-level signaling failure (bad/mismatched Twilio
+      // credentials, network block, etc.) throws as a fully uncaught exception
+      // in the browser console with no visible feedback — the widget just sits
+      // there ("Calling…") until our connect() timeout eventually gives up,
+      // looking like nothing happened at all.
+      device.on('error', (twilioError) => {
+        const now = Date.now();
+        if (now - lastDeviceErrorToastRef.current > 5000) {
+          lastDeviceErrorToastRef.current = now;
+          toast(
+            `Voice calling error: ${twilioError?.message || 'could not connect to Twilio.'} Check the Account SID / API Key / API Key Secret in Settings → Channels → Voice.`,
+            'danger'
+          );
+        }
+        resetCallState();
+      });
+
       device.on('incoming', (call) => {
         // Only one call at a time — a second incoming call while already busy
         // just rings out unanswered on Twilio's side (matches normal phone behavior).
@@ -102,7 +122,7 @@ export function VoiceProvider({ children }) {
       deviceRef.current?.destroy();
       deviceRef.current = null;
     };
-  }, [user, wireCallEvents]);
+  }, [user, wireCallEvents, resetCallState, toast]);
 
   // How long to wait for device.connect() to resolve before giving up. This
   // normally resolves in well under a second, but it internally waits on the
