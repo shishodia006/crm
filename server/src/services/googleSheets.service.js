@@ -14,7 +14,14 @@ async function refreshAccessTokenIfNeeded(companyId) {
   if (accessToken && expiresAt && Date.now() < expiresAt - 60000) return accessToken;
 
   const refreshToken = await getSetting('google_sheets_refresh_token', '', companyId);
-  if (!refreshToken) return null;
+  if (!refreshToken) {
+    console.error(`[google-sheets] company ${companyId}: no refresh token stored — was never connected, or disconnectGoogleSheets() ran.`);
+    return null;
+  }
+  if (!config.googleSheets.clientId || !config.googleSheets.clientSecret) {
+    console.error('[google-sheets] GOOGLE_SHEETS_OAUTH_CLIENT_ID / GOOGLE_SHEETS_OAUTH_CLIENT_SECRET missing from server env — every company\'s refresh will fail until this is set.');
+    return null;
+  }
 
   const body = new URLSearchParams({
     client_id: config.googleSheets.clientId,
@@ -24,7 +31,15 @@ async function refreshAccessTokenIfNeeded(companyId) {
   });
   const response = await fetch('https://oauth2.googleapis.com/token', { method: 'POST', body });
   const token = await response.json().catch(() => ({}));
-  if (!token.access_token) return null;
+  if (!token.access_token) {
+    // Surfacing Google's actual reason (e.g. invalid_grant — token expired/revoked,
+    // often because the OAuth app is still in Google's "Testing" publishing status,
+    // where refresh tokens auto-expire after 7 days) instead of silently returning
+    // null, which was the only reason this was previously indistinguishable from
+    // "never connected" at all — both produced the exact same generic error message.
+    console.error(`[google-sheets] company ${companyId}: token refresh failed —`, token.error, token.error_description || '(no description)');
+    return null;
+  }
 
   await saveCompanySetting(companyId, 'google_sheets_access_token', token.access_token, 'sources');
   await saveCompanySetting(companyId, 'google_sheets_token_expires_at', String(Date.now() + Number(token.expires_in || 3600) * 1000), 'sources');
