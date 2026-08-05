@@ -69,13 +69,6 @@ const PROVIDER_FIELDS = {
     { name: 'twilio_api_key_secret', label: 'API Key Secret', type: 'password' },
     { name: 'twilio_twiml_app_sid', label: 'TwiML Application SID' },
     { name: 'twilio_record_calls', label: 'Record calls', type: 'checkbox' },
-    // Defaults ON (matches the server's getSetting() fallback) — every company
-    // that's never touched this toggle keeps working exactly as before it
-    // existed, and this checkbox must visually reflect that or an admin saving
-    // an unrelated field change (e.g. rotating the API key) with the checkbox
-    // rendered unchecked would silently disable their own inbound calling.
-    { name: 'twilio_inbound_enabled', label: 'Enable inbound calls in this CRM', type: 'checkbox', defaultOn: true },
-    { name: 'twilio_fallback_voice_url', label: 'Fallback webhook URL (used only when inbound is turned off above)' },
   ],
 };
 const GENERIC_SMS_FIELDS = [
@@ -185,7 +178,7 @@ export default function ChannelsPage() {
                     <div className="form-check">
                       <input
                         type="checkbox" className="form-check-input" id={`field-${f.name}`}
-                        checked={settings[f.name] != null ? settings[f.name] === '1' : !!f.defaultOn}
+                        checked={settings[f.name] === '1'}
                         onChange={(e) => setField(f.name, e.target.checked ? '1' : '0')}
                       />
                       <label className="form-check-label crm-label mb-0" htmlFor={`field-${f.name}`}>{f.label}</label>
