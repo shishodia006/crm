@@ -190,10 +190,12 @@ function FullscreenToggle() {
 /* ── Notification bell ─────────────────────────────────── */
 function NotificationBell() {
   const navigate = useNavigate();
+  const toast = useToast();
   const wrapRef = useRef(null);
   const [open, setOpen] = useState(false);
   const [data, setData] = useState({ unread: 0, items: [] });
   const prevUnreadRef = useRef(null);
+  const seenIdsRef = useRef(null); // null until first load establishes a baseline
 
   const load = useCallback(() => {
     api.get('/api/notifications').then((res) => {
@@ -202,10 +204,20 @@ function NotificationBell() {
       if (prevUnreadRef.current !== null && res.unread > prevUnreadRef.current) {
         playNotificationSound();
       }
+      // Google Sheets auto-sync results are a "just tell me, don't make me open
+      // the bell" event — surface them as a simple bottom-right toast instead of
+      // (or in addition to, since there's no separate push channel for this)
+      // sitting quietly in the notifications dropdown.
+      if (seenIdsRef.current) {
+        res.items
+          .filter((item) => item.type === 'google_sheets_sync' && !seenIdsRef.current.has(item.id))
+          .forEach((item) => toast(item.title, 'info'));
+      }
+      seenIdsRef.current = new Set(res.items.map((item) => item.id));
       prevUnreadRef.current = res.unread;
       setData(res);
     }).catch(() => {});
-  }, []);
+  }, [toast]);
 
   useEffect(() => {
     load();

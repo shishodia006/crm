@@ -7,6 +7,7 @@ import { processDueBroadcasts } from './src/services/broadcast.service.js';
 import { pollEmailReplies } from './src/services/emailInbox.service.js';
 import { pollAllSalesforceCompanies } from './src/services/salesforce.service.js';
 import { pollAllLinkedinCompanies } from './src/services/linkedin.service.js';
+import { pollAllGoogleSheetsCompanies } from './src/services/googleSheets.service.js';
 import { pool } from './src/db/pool.js';
 import { runAutoMigrations } from './src/db/autoMigrate.js';
 
@@ -21,9 +22,10 @@ if (isCron) {
     processDueBroadcasts(),
     pollEmailReplies(),
     pollAllSalesforceCompanies(),
-    pollAllLinkedinCompanies()
-  ]).then(([drip, jobs, reports, broadcasts, inbox, salesforce, linkedin]) => {
-    console.log(`[cron] Done — drip: processed=${drip.processed} errors=${drip.errors} skipped=${drip.skipped} | jobs: processed=${jobs.processed} errors=${jobs.errors} | reports: sent=${reports.sent} failed=${reports.failed} | broadcasts: sent=${broadcasts.sent} failed=${broadcasts.failed} | inbox: processed=${inbox.processed} recorded=${inbox.recorded} errors=${inbox.errors} | salesforce: processed=${salesforce.processed} imported=${salesforce.imported} errors=${salesforce.errors} | linkedin: processed=${linkedin.processed} imported=${linkedin.imported} errors=${linkedin.errors}`);
+    pollAllLinkedinCompanies(),
+    pollAllGoogleSheetsCompanies()
+  ]).then(([drip, jobs, reports, broadcasts, inbox, salesforce, linkedin, googleSheets]) => {
+    console.log(`[cron] Done — drip: processed=${drip.processed} errors=${drip.errors} skipped=${drip.skipped} | jobs: processed=${jobs.processed} errors=${jobs.errors} | reports: sent=${reports.sent} failed=${reports.failed} | broadcasts: sent=${broadcasts.sent} failed=${broadcasts.failed} | inbox: processed=${inbox.processed} recorded=${inbox.recorded} errors=${inbox.errors} | salesforce: processed=${salesforce.processed} imported=${salesforce.imported} errors=${salesforce.errors} | linkedin: processed=${linkedin.processed} imported=${linkedin.imported} errors=${linkedin.errors} | google-sheets: processed=${googleSheets.processed} imported=${googleSheets.imported} errors=${googleSheets.errors}`);
     process.exit(0);
   }).catch((err) => {
     console.error('[cron] Error:', err);
@@ -78,14 +80,15 @@ function startDripScheduler() {
     if (running) return; // skip if previous run still going
     running = true;
     try {
-      const [drip, jobs, reports, broadcasts, inbox, salesforce, linkedin] = await Promise.all([
+      const [drip, jobs, reports, broadcasts, inbox, salesforce, linkedin, googleSheets] = await Promise.all([
         processDue(config.dripBatchSize),
         processJobs(50),
         processDueReportSchedules(),
         processDueBroadcasts(),
         pollEmailReplies(),
         pollAllSalesforceCompanies(),
-        pollAllLinkedinCompanies()
+        pollAllLinkedinCompanies(),
+        pollAllGoogleSheetsCompanies()
       ]);
       if (drip.processed > 0 || drip.errors > 0) {
         console.log(`[drip] processed=${drip.processed} errors=${drip.errors} skipped=${drip.skipped}`);
@@ -104,6 +107,9 @@ function startDripScheduler() {
       }
       if (linkedin.processed > 0 || linkedin.errors > 0) {
         console.log(`[linkedin] processed=${linkedin.processed} imported=${linkedin.imported} errors=${linkedin.errors}`);
+      }
+      if (googleSheets.processed > 0 || googleSheets.errors > 0) {
+        console.log(`[google-sheets] processed=${googleSheets.processed} imported=${googleSheets.imported} errors=${googleSheets.errors}`);
       }
     } catch (err) {
       console.error('[drip] scheduler error:', err.message);

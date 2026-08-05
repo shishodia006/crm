@@ -41,6 +41,27 @@ export async function inboundTwiml(req, res) {
     await logTwilioWebhook('inbound_unresolved', req.body, 'ignored');
     return res.type('text/xml').send('<Response><Say>This number is not configured.</Say><Hangup/></Response>');
   }
+
+  // "Enable inbound calls in this CRM" toggle (Settings → Channels → Voice) —
+  // defaults to enabled (getSetting's fallback) so existing companies that have
+  // never touched this setting keep working exactly as before this toggle
+  // existed. When explicitly turned off, this number's calls hand off to
+  // whatever URL this shares the number with (e.g. it was previously wired to
+  // a different panel/system) via a TwiML <Redirect> — Twilio re-POSTs the same
+  // call to that URL and continues from there. This never touches the number's
+  // actual Twilio Console "A call comes in" setting, so flipping the toggle
+  // back on always instantly restores full control to this CRM.
+  const inboundEnabled = (await getSetting('twilio_inbound_enabled', '1', companyId)) !== '0';
+  if (!inboundEnabled) {
+    const fallbackUrl = await getSetting('twilio_fallback_voice_url', '', companyId);
+    await logTwilioWebhook('inbound_disabled', { ...req.body, fallbackUrl: fallbackUrl || null }, 'processed');
+    if (fallbackUrl) {
+      return res.type('text/xml').send(`<Response><Redirect method="POST">${fallbackUrl}</Redirect></Response>`);
+    }
+    console.warn(`[twilio] inbound disabled for company ${companyId} but no fallback URL configured — call to ${toNumber} was dropped.`);
+    return res.type('text/xml').send('<Response><Say>Sorry, this number is not currently available.</Say><Hangup/></Response>');
+  }
+
   const { twiml, commId } = await buildInboundRouteTwiml(companyId, req.body.From, toNumber);
   await logTwilioWebhook('inbound', { ...req.body, commId }, 'processed');
   res.type('text/xml').send(twiml);

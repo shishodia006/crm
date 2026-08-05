@@ -188,6 +188,7 @@ export async function saveIntegrations(req, res) {
     rcs_api_key: 'rcs',
     twilio_account_sid: 'voice', twilio_auth_token: 'voice', twilio_phone_number: 'voice',
     twilio_api_key_sid: 'voice', twilio_api_key_secret: 'voice', twilio_twiml_app_sid: 'voice', twilio_record_calls: 'voice',
+    twilio_inbound_enabled: 'voice', twilio_fallback_voice_url: 'voice',
     indiamart_key: 'sources', tradeindia_key: 'sources',
     tradeindia_user: 'sources', meta_ads_token: 'sources', meta_ads_secret: 'sources', meta_verify_token: 'sources',
     google_ads_webhook_secret: 'sources', linkedin_oauth_client_id: 'sources', linkedin_oauth_client_secret: 'sources',

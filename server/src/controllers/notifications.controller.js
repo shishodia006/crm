@@ -3,7 +3,7 @@ import { ok } from '../utils/response.js';
 
 export async function index(req, res) {
   const items = await q(
-    'SELECT id,title,body,link,is_read,created_at FROM notifications WHERE user_id=? ORDER BY created_at DESC LIMIT 20',
+    'SELECT id,type,title,body,link,is_read,created_at FROM notifications WHERE user_id=? ORDER BY created_at DESC LIMIT 20',
     [req.user.id]
   );
   const unread = Number(await scalar('SELECT COUNT(*) FROM notifications WHERE user_id=? AND is_read=0', [req.user.id]));

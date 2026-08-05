@@ -1,6 +1,7 @@
 import { one, q, run } from '../db/pool.js';
 import { getSetting, saveCompanySetting } from './settings.service.js';
 import { normalizeImportRow, processLead } from './lead.service.js';
+import { notifyUsers, notifyRecipientsForLead } from './notifications.service.js';
 import { config } from '../config/index.js';
 
 // Google Sheets credentials/tokens are company-scoped (saveCompanySetting), unlike
@@ -214,4 +215,41 @@ export async function syncAllGoogleSheetConnections(companyId, req) {
 
   if (totals.imported > 0) await createSyncTask(companyId, `Review ${totals.imported} leads from Google Sheets`, totals.imported);
   return totals;
+}
+
+// ── Auto-sync (drip scheduler / --cron), mirroring pollAllSalesforceCompanies /
+// pollAllLinkedinCompanies in salesforce.service.js / linkedin.service.js ──────
+export async function companiesWithGoogleSheets() {
+  const rows = await q('SELECT DISTINCT company_id FROM google_sheet_connections');
+  return rows.map((r) => Number(r.company_id));
+}
+
+export async function pollAllGoogleSheetsCompanies() {
+  const companyIds = await companiesWithGoogleSheets();
+  let processed = 0, imported = 0, errors = 0;
+  for (const companyId of companyIds) {
+    try {
+      // syncAllGoogleSheetConnections only ever reads req.companyId (see
+      // processLead/validateLead in lead.service.js) — there's no real HTTP
+      // request here, so a plain { companyId } stub stands in for it. Passing
+      // null instead would leave every imported lead's company_id unset, the
+      // same "invisible row" bug already fixed elsewhere in the workflow engine.
+      const result = await syncAllGoogleSheetConnections(companyId, { companyId });
+      processed += result.total;
+      imported += result.imported;
+      if (result.imported > 0) {
+        const recipients = await notifyRecipientsForLead(companyId, null);
+        await notifyUsers(recipients, {
+          type: 'google_sheets_sync',
+          title: `${result.imported} new lead${result.imported === 1 ? '' : 's'} synced from Google Sheets`,
+          body: `Auto-synced from your connected Google Sheet${result.imported === 1 ? '' : 's'} — check the Leads list.`,
+          link: '/leads',
+        });
+      }
+    } catch (err) {
+      errors += 1;
+      console.error(`[google-sheets-poll] company ${companyId}:`, err.message);
+    }
+  }
+  return { processed, imported, errors };
 }
