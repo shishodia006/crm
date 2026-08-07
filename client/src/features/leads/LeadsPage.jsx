@@ -136,10 +136,18 @@ export default function LeadsPage() {
     { label: 'Mobile', render: (r) => (
       <span className="text-12 text-muted-2">{r.mobile || <span className="text-muted">—</span>}</span>
     )},
-    { label: 'Source', render: (r) => r.source_name
-        ? <span className="badge badge-source badge-crm">{r.source_name}</span>
-        : <span className="text-muted">—</span>
-    },
+    { label: 'Source', render: (r) => (
+      <div>
+        {r.source_name
+          ? <span className="badge badge-source badge-crm">{r.source_name}</span>
+          : <span className="text-muted">—</span>}
+        {r.source_ref && (
+          <div className="text-11 text-muted-2 text-truncate" style={{ maxWidth: 160 }} title={r.source_ref}>
+            {(() => { try { return new URL(r.source_ref).pathname || r.source_ref; } catch { return r.source_ref; } })()}
+          </div>
+        )}
+      </div>
+    )},
     { label: 'Assigned', render: (r) => r.assigned_name
         ? <span className="badge badge-crm" style={{ background: '#ede9fe', color: '#7c3aed' }}>{r.assigned_name}</span>
         : <span className="text-muted text-12">Unassigned</span>

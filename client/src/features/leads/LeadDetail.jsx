@@ -38,6 +38,35 @@ const STEP_COLOR = {
 };
 const CH_COLOR = { email:'#3b82f6', whatsapp:'#25d366', rcs:'#8b5cf6', sms:'#f59e0b' };
 const CH_ICON  = { email:'envelope-fill', whatsapp:'whatsapp', rcs:'phone-vibrate-fill', sms:'chat-dots-fill' };
+
+// custom_fields holds the raw payload exactly as the form/webhook sent it —
+// keys are whatever the source used (sourcePage, organization, focus, ...),
+// not the normalized lead columns. sourcePage/page_url is dropped here since
+// it's already shown above as "Page URL" (source_ref).
+const CUSTOM_FIELD_SKIP = new Set(['sourcePage', 'source_page', 'page_url', 'company_id']);
+function prettifyFieldKey(key) {
+  return key.replace(/_/g, ' ').replace(/([a-z])([A-Z])/g, '$1 $2')
+    .replace(/\b\w/g, (c) => c.toUpperCase());
+}
+function formatFieldValue(val) {
+  if (val === null || val === undefined || val === '') return null;
+  if (Array.isArray(val)) return val.length ? val.join(', ') : null;
+  if (typeof val === 'boolean') return val ? 'Yes' : 'No';
+  if (typeof val === 'object') return JSON.stringify(val);
+  return String(val);
+}
+function parseCustomFields(customFields) {
+  if (!customFields) return [];
+  let obj = customFields;
+  if (typeof obj === 'string') {
+    try { obj = JSON.parse(obj); } catch { return []; }
+  }
+  if (!obj || typeof obj !== 'object') return [];
+  return Object.entries(obj)
+    .filter(([key]) => !CUSTOM_FIELD_SKIP.has(key))
+    .map(([key, val]) => [prettifyFieldKey(key), formatFieldValue(val)])
+    .filter(([, val]) => val !== null);
+}
 const CH_LABEL = { email:'EMAIL', whatsapp:'WHATSAPP', rcs:'RCS', sms:'SMS' };
 
 function stepLabel(step) {
@@ -526,6 +555,27 @@ export default function LeadDetail() {
               </div>
             </div>
           </div>
+
+          {/* All fields the form/webhook actually submitted, beyond the normalized columns above */}
+          {(() => {
+            const extraFields = parseCustomFields(lead.custom_fields);
+            if (!extraFields.length) return null;
+            return (
+              <div className="card border-0 shadow-sm mb-3">
+                <div className="card-body">
+                  <div className="text-muted small mb-2 fw-semibold">Submitted Form Data</div>
+                  <div className="row g-3">
+                    {extraFields.map(([label, val]) => (
+                      <div key={label} className="col-sm-6">
+                        <div className="text-muted small">{label}</div>
+                        <div className="text-14 text-break">{val}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
 
           {/* Score + Enroll side by side */}
           <div className="row g-3">

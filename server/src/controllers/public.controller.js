@@ -52,7 +52,12 @@ export async function ingest(req, res) {
     designation: raw.designation ?? raw.job_title ?? raw.title ?? null,
     industry: raw.industry ?? null, city: raw.city ?? null, state: raw.state ?? null,
     country: raw.country ?? 'India', product_interest: raw.product_interest ?? raw.product ?? raw.subject ?? null,
-    campaign_ref: raw.campaign ?? raw.utm_campaign ?? null, source_ref: raw.source_ref ?? raw.lead_id ?? null,
+    campaign_ref: raw.campaign ?? raw.utm_campaign ?? null,
+    // Website forms send the page they were submitted from as `sourcePage` —
+    // surface it here so leads sharing the same lead_sources bucket (e.g. two
+    // different pages both defaulting to "contact_form") are still tellable
+    // apart in the UI, which already renders source_ref as a "Page URL" link.
+    source_ref: raw.source_ref ?? raw.lead_id ?? raw.sourcePage ?? raw.source_page ?? raw.page_url ?? null,
     custom_fields: raw
   };
   const result = await processLead(normalized, sourceRow.id, raw.campaign_id ? Number(raw.campaign_id) : null, req);
