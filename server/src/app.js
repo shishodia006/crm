@@ -87,11 +87,12 @@ export function createApp() {
   // origin, so any such browser-based test would get silently blocked before
   // ever reaching the route below. These paths need no cookies/credentials, so
   // allowing any origin here is safe.
-  // /capture is the same idea but for the customer's OWN websites: the embed
-  // snippet on their popup/landing page/contact form runs as browser JS on
-  // *their* domain, not ours, so it needs the same open-CORS treatment.
+  // /capture and /ingest are the same idea but for the customer's OWN
+  // websites: the embed snippet (or, for static-export sites with no server
+  // to proxy through, the site's own lead-form JS) runs as browser JS on
+  // *their* domain, not ours, so both need the same open-CORS treatment.
   app.use((req, res, next) => {
-    if (!req.path.startsWith('/webhook/') && !req.path.startsWith('/track/') && !req.path.startsWith('/capture/')) return next();
+    if (!req.path.startsWith('/webhook/') && !req.path.startsWith('/track/') && !req.path.startsWith('/capture/') && !req.path.startsWith('/ingest/')) return next();
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'GET,HEAD,POST,OPTIONS');
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-API-KEY, X-Api-Key, Authorization, authorization');
