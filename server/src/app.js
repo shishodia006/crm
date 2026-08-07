@@ -2,6 +2,7 @@ import express from 'express';
 import session from 'express-session';
 import MySQLStoreFactory from 'express-mysql-session';
 import swaggerUi from 'swagger-ui-express';
+import multer from 'multer';
 import path from 'path';
 import crypto from 'crypto';
 import { fileURLToPath } from 'url';
@@ -120,6 +121,26 @@ export function createApp() {
       } else {
         try { req.body = text ? JSON.parse(text) : {}; } catch { req.body = {}; }
       }
+      next();
+    });
+  });
+
+  // Multipart form support for public lead-capture endpoints (/ingest, /qr,
+  // /capture) — some website embed snippets submit as multipart/form-data
+  // (e.g. a page whose form also has an unrelated file input elsewhere)
+  // rather than urlencoded/JSON, which the global json/urlencoded parsers
+  // below can't read at all (req.body comes back empty, failing validation
+  // with a misleading "Name is required"). Only text fields are accepted
+  // (upload.none()) — these routes are keyed by nothing more than a shared
+  // API key or a guessable slug, so accepting arbitrary file uploads here
+  // would be an easy anonymous disk-fill DoS vector.
+  const leadCaptureUpload = multer().none();
+  app.use((req, res, next) => {
+    const isLeadCapture = req.path.startsWith('/ingest/') || req.path.startsWith('/qr/') || req.path.startsWith('/capture/');
+    if (!isLeadCapture || !(req.get('content-type') || '').startsWith('multipart/form-data')) return next();
+    leadCaptureUpload(req, res, (err) => {
+      if (err) return res.status(400).json({ success: false, message: `Invalid form submission: ${err.message}` });
+      req.rawBody = ''; // not used by these routes; only sentinel so the parsers below skip an already-consumed stream
       next();
     });
   });

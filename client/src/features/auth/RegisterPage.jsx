@@ -5,7 +5,6 @@ import { useAuth } from '../../hooks/useAuth.js';
 export default function RegisterPage() {
   const { register } = useAuth();
   const navigate = useNavigate();
-
   const [form, setForm] = useState({ name: '', email: '', password: '', confirm: '', company: '' });
   const [showPass, setShowPass] = useState(false);
   const [error, setError]   = useState('');
