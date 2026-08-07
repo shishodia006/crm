@@ -241,6 +241,35 @@ export async function runAutoMigrations() {
       }
     }
 
+    // 011_lead_sources_backfill — the full lead_sources catalog is seeded only
+    // by database/schema.sql's one-time INSERT, so any database created before
+    // a given row was added to that list (e.g. contact_form/landing_page/etc.)
+    // never gets it, and POST /ingest/:source or /capture/:source 404s with
+    // "Unknown source" for a slug that looks like it should obviously exist.
+    // `slug` is UNIQUE, so INSERT IGNORE only adds whatever's actually missing.
+    await run(`
+      INSERT IGNORE INTO lead_sources (name, slug, category) VALUES
+        ('IndiaMART',         'indimart',        'marketplace'),
+        ('TradeIndia',        'tradeindia',      'marketplace'),
+        ('JustDial',          'justdial',        'marketplace'),
+        ('G2 Intent',         'g2_intent',       'marketplace'),
+        ('Bombora',           'bombora',         'marketplace'),
+        ('Meta Lead Ads',     'meta_leads',      'advertising'),
+        ('Google Ads',        'google_ads',      'advertising'),
+        ('LinkedIn Lead Ads', 'linkedin_leads',  'advertising'),
+        ('Contact Form',      'contact_form',    'website'),
+        ('Landing Page',      'landing_page',    'website'),
+        ('Chatbot',           'chatbot',         'website'),
+        ('Website Popup',     'website_popup',   'website'),
+        ('Apollo',            'apollo',          'external'),
+        ('ZoomInfo',          'zoominfo',        'external'),
+        ('Lusha',             'lusha',           'external'),
+        ('CSV Upload',        'csv_upload',      'external'),
+        ('API Push',          'api_push',        'api'),
+        ('QR Lead Capture',   'qr_capture',      'events'),
+        ('Manual Entry',      'manual',          'manual')
+    `);
+
     console.log('[auto-migrate] schema check complete — up to date.');
   } catch (err) {
     // Never crash the whole server over a migration hiccup — log loudly so it's
