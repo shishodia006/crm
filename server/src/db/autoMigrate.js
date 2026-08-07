@@ -1,5 +1,6 @@
 import { pool, q, run } from './pool.js';
 import { isSensitive } from '../services/settings.service.js';
+import { generateApiKey } from '../utils/helpers.js';
 
 // Runs once at server startup and brings the DB schema up to date with
 // database/migrations/001..008, without relying on "ADD COLUMN IF NOT EXISTS"
@@ -219,6 +220,19 @@ export async function runAutoMigrations() {
     await ensureColumn('communications', 'recording_url', '`recording_url` VARCHAR(500) DEFAULT NULL');
     await ensureColumn('communications', 'agent_user_id', '`agent_user_id` INT UNSIGNED DEFAULT NULL', 'idx_agent', 'ADD INDEX `idx_agent` (`agent_user_id`)');
     await ensureForeignKey('communications', 'fk_communications_agent_user', 'FOREIGN KEY (`agent_user_id`) REFERENCES `users`(`id`) ON DELETE SET NULL');
+
+    // 010_company_api_key — one bearer key per company, authenticating
+    // POST /ingest/:source. Every pre-existing company predates this column,
+    // so backfill each with its own unique key (can't be a single bulk
+    // UPDATE like the company_id backfills above, since api_key is UNIQUE).
+    await ensureColumn('companies', 'api_key', '`api_key` VARCHAR(80) DEFAULT NULL UNIQUE');
+    const companiesMissingKey = await q('SELECT id FROM companies WHERE api_key IS NULL');
+    for (const row of companiesMissingKey) {
+      await run('UPDATE companies SET api_key=? WHERE id=?', [generateApiKey(), row.id]);
+    }
+    if (companiesMissingKey.length) {
+      console.log(`[auto-migrate] generated api_key for ${companiesMissingKey.length} existing compan${companiesMissingKey.length === 1 ? 'y' : 'ies'}`);
+    }
 
     console.log('[auto-migrate] schema check complete — up to date.');
   } catch (err) {

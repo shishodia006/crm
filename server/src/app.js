@@ -1,6 +1,7 @@
 import express from 'express';
 import session from 'express-session';
 import MySQLStoreFactory from 'express-mysql-session';
+import swaggerUi from 'swagger-ui-express';
 import path from 'path';
 import crypto from 'crypto';
 import { fileURLToPath } from 'url';
@@ -9,6 +10,18 @@ import { currentUser } from './middleware/auth.js';
 import { currentCompany } from './middleware/company.js';
 import { validateCsrf } from './middleware/csrf.js';
 import routes from './routes/index.js';
+import { buildOpenApiSpec } from './docs/openapi.js';
+
+// API docs (Swagger UI) are for one person only. Everyone else — logged out
+// or logged in as anyone else — gets a plain 404, same as any other unknown
+// route, so the existence of /docs isn't revealed to non-admins either.
+const DOCS_ALLOWED_EMAIL = 'admin@dotdomino.com';
+function requireDocsAccess(req, res, next) {
+  if (req.user?.email?.toLowerCase() === DOCS_ALLOWED_EMAIL) return next();
+  res.status(404);
+  if (req.accepts('html')) return res.type('html').send('<!doctype html><title>Not Found</title><p>Not found.</p>');
+  res.type('txt').send('Not found');
+}
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -154,6 +167,12 @@ export function createApp() {
   // Attach current user to req
   app.use(currentUser);
   app.use(currentCompany);
+
+  // API docs (Swagger UI) — restricted to DOCS_ALLOWED_EMAIL only, see above.
+  const openApiSpec = buildOpenApiSpec();
+  app.use('/docs', requireDocsAccess, swaggerUi.serve, swaggerUi.setup(openApiSpec, {
+    customSiteTitle: 'Dot Domino CRM — API Docs'
+  }));
 
   // CSRF validation for mutating API routes
   app.use('/api', validateCsrf);

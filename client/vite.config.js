@@ -7,6 +7,7 @@ export default defineConfig({
     port: 5173,
     proxy: {
       '/api': { target: 'http://127.0.0.1:8090', changeOrigin: true },
+      '/docs': { target: 'http://127.0.0.1:8090', changeOrigin: true },
       '/oauth': { target: 'http://127.0.0.1:8090', changeOrigin: true },
       '/public': { target: 'http://127.0.0.1:8090', changeOrigin: true },
       '/track': { target: 'http://127.0.0.1:8090', changeOrigin: true },

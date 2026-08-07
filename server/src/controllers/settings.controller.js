@@ -2,7 +2,7 @@ import bcrypt from 'bcryptjs';
 import nodemailer from 'nodemailer';
 import { one, q, run, scalar, updateById } from '../db/pool.js';
 import { ok, fail } from '../utils/response.js';
-import { boolInt } from '../utils/helpers.js';
+import { boolInt, generateApiKey } from '../utils/helpers.js';
 import { companySettings, saveCompanySetting, getSetting } from '../services/settings.service.js';
 import { sendSms } from '../services/sms.service.js';
 import { encryptValue, decryptValue } from '../utils/crypto.js';
@@ -18,6 +18,26 @@ function parseAccountConfig(account) {
 export async function getSettings(req, res) {
   const result = await companySettings(req.companyId);
   ok(res, { settings: result.values, rows: result.rows });
+}
+
+// One key per company, shared by every member (invited or original) of it —
+// authenticates POST /ingest/:source. Auto-generated on company creation
+// (createCompany()) and backfilled for pre-existing companies (autoMigrate.js),
+// so this lazy-generate is just a defensive fallback, not the normal path.
+export async function getApiKey(req, res) {
+  let row = await one('SELECT api_key FROM companies WHERE id=? LIMIT 1', [req.companyId]);
+  let apiKey = row?.api_key;
+  if (!apiKey) {
+    apiKey = generateApiKey();
+    await run('UPDATE companies SET api_key=? WHERE id=?', [apiKey, req.companyId]);
+  }
+  ok(res, { api_key: apiKey });
+}
+
+export async function regenerateApiKey(req, res) {
+  const apiKey = generateApiKey();
+  await run('UPDATE companies SET api_key=? WHERE id=?', [apiKey, req.companyId]);
+  ok(res, { api_key: apiKey }, 'API key regenerated — update any integrations still using the old one.');
 }
 
 export async function saveSettings(req, res) {

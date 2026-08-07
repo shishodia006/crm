@@ -1,5 +1,17 @@
+import crypto from 'crypto';
+
 export function isAdmin(user) {
   return ['admin', 'superadmin'].includes(user?.role || '');
+}
+
+// One key per company (workspace), not per user — every member of a company,
+// invited or original, authenticates POST /ingest/:source with this same
+// value. Plaintext (not encrypted at rest), same convention as
+// integration_accounts.webhook_key — both are opaque bearer secrets looked
+// up by direct `WHERE api_key=?` equality, which AES-GCM's random IV would
+// make impossible without an expensive decrypt-every-row loop.
+export function generateApiKey() {
+  return `ddk_${crypto.randomBytes(24).toString('hex')}`;
 }
 
 export function hasRole(user, ...roles) {

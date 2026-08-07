@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { api } from '../../services/api.js';
 import { useToast } from '../../hooks/useToast.js';
+import { useConfirm } from '../../hooks/useConfirm.js';
 import LoadingBox from '../../components/common/LoadingBox.jsx';
 import PasswordInput from '../../components/common/PasswordInput.jsx';
 
@@ -43,10 +44,14 @@ function detectAiProvider(url) {
 
 export default function GeneralSettings() {
   const toast = useToast();
+  const confirm = useConfirm();
   const [form, setForm] = useState({});
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [aiProvider, setAiProvider] = useState('custom');
+  const [apiKey, setApiKey] = useState('');
+  const [apiKeyVisible, setApiKeyVisible] = useState(false);
+  const [regenerating, setRegenerating] = useState(false);
 
   useEffect(() => {
     api.get('/api/settings').then((d) => {
@@ -54,7 +59,32 @@ export default function GeneralSettings() {
       setForm(settings);
       setAiProvider(detectAiProvider(settings.ai_api_url));
     }).finally(() => setLoading(false));
+    api.get('/api/settings/api-key').then((d) => setApiKey(d.api_key ?? '')).catch(() => {});
   }, []);
+
+  const copyApiKey = () => {
+    navigator.clipboard.writeText(apiKey);
+    toast('API key copied.', 'success');
+  };
+
+  const regenerateApiKey = async () => {
+    const yes = await confirm(
+      'Any integration (Zapier, custom script, etc.) using the current key will stop working until you update it with the new one. This cannot be undone.',
+      { title: 'Regenerate API key?', danger: true, confirmLabel: 'Regenerate' }
+    );
+    if (!yes) return;
+    setRegenerating(true);
+    try {
+      const d = await api.post('/api/settings/api-key/regenerate');
+      setApiKey(d.api_key);
+      setApiKeyVisible(true);
+      toast('API key regenerated.', 'success');
+    } catch (err) {
+      toast(err.message, 'danger');
+    } finally {
+      setRegenerating(false);
+    }
+  };
 
   const handleProviderChange = (key) => {
     setAiProvider(key);
@@ -97,6 +127,38 @@ export default function GeneralSettings() {
                 />
               </div>
             ))}
+          </div>
+
+          <h6 className="fw-semibold mt-4 mb-1">API Key</h6>
+          <p className="text-muted text-12 mb-3">
+            One key for this workspace — shared by every team member, invited or not. Use it to authenticate{' '}
+            <code>POST /ingest/:source</code> calls from Zapier, custom scripts, or any other outside system pushing leads in.
+          </p>
+          <div className="row g-3">
+            <div className="col-md-8">
+              <label className="form-label">Your API Key</label>
+              <div className="d-flex align-items-center gap-2">
+                <input
+                  type={apiKeyVisible ? 'text' : 'password'}
+                  className="form-control font-monospace"
+                  value={apiKey}
+                  readOnly
+                  autoComplete="one-time-code"
+                  data-1p-ignore="true"
+                  data-lpignore="true"
+                />
+                <button type="button" className="btn btn-outline-secondary flex-shrink-0" title={apiKeyVisible ? 'Hide' : 'Show'} onClick={() => setApiKeyVisible((v) => !v)}>
+                  <i className={`bi bi-eye${apiKeyVisible ? '-slash' : ''}`} />
+                </button>
+                <button type="button" className="btn btn-outline-secondary flex-shrink-0" title="Copy" disabled={!apiKey} onClick={copyApiKey}>
+                  <i className="bi bi-clipboard" />
+                </button>
+                <button type="button" className="btn btn-outline-danger flex-shrink-0 text-nowrap" disabled={regenerating} onClick={regenerateApiKey}>
+                  {regenerating ? 'Regenerating…' : 'Regenerate'}
+                </button>
+              </div>
+              <div className="text-11 text-muted-3 mt-1">Regenerating immediately invalidates the old key — anything still using it will start getting 401 errors.</div>
+            </div>
           </div>
 
           <h6 className="fw-semibold mt-4 mb-1">Monthly Goals</h6>

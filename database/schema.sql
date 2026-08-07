@@ -675,6 +675,12 @@ CREATE TABLE IF NOT EXISTS `companies` (
   `currency` VARCHAR(12) DEFAULT NULL,
   `is_active` TINYINT(1) NOT NULL DEFAULT 1,
   `created_by` INT UNSIGNED DEFAULT NULL,
+  -- One key per company (not per user) authenticating POST /ingest/:source —
+  -- every member, invited or original, shares the same key. Plaintext, not
+  -- AES-GCM encrypted like other credential columns: it must be looked up
+  -- with a direct `WHERE api_key=?`, same convention as
+  -- integration_accounts.webhook_key.
+  `api_key` VARCHAR(80) DEFAULT NULL UNIQUE,
   `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   FOREIGN KEY (`created_by`) REFERENCES `users`(`id`) ON DELETE SET NULL

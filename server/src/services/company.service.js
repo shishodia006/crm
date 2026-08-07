@@ -1,4 +1,5 @@
 import { one, q, run } from '../db/pool.js';
+import { generateApiKey } from '../utils/helpers.js';
 
 export function slugifyCompanyName(name) {
   return String(name || '')
@@ -40,8 +41,8 @@ export async function createCompany({ name, timezone, currency, userId }) {
   let suffix = 2;
   while (await one('SELECT id FROM companies WHERE slug=? LIMIT 1', [slug])) slug = `${baseSlug}-${suffix++}`;
   const result = await run(
-    'INSERT INTO companies (name,slug,timezone,currency,created_by) VALUES (?,?,?,?,?)',
-    [name, slug, timezone || null, currency || null, userId]
+    'INSERT INTO companies (name,slug,timezone,currency,created_by,api_key) VALUES (?,?,?,?,?,?)',
+    [name, slug, timezone || null, currency || null, userId, generateApiKey()]
   );
   await run('INSERT INTO company_users (company_id,user_id,role) VALUES (?,?,?)', [result.insertId, userId, 'admin']);
   return one('SELECT * FROM companies WHERE id=? LIMIT 1', [result.insertId]);

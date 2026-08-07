@@ -14,14 +14,33 @@ import { extractWebhookEvents, extractInboundMessages, recordCommunicationEvent 
 import { recordInboundMessage } from '../services/conversation.service.js';
 
 export async function ingest(req, res) {
-  const expected = config.apiToken;
-  if (expected) {
-    const header = req.headers.authorization || '';
-    const provided = /^Bearer\s+(.+)$/i.test(header) ? header.replace(/^Bearer\s+/i, '').trim() : '';
-    if (!safeEquals(expected, provided)) return fail(res, 'Invalid API token.', 401);
-  } else if (config.env === 'production') {
-    return fail(res, 'Lead ingest API token is not configured.', 503);
+  const header = req.headers.authorization || '';
+  const provided = /^Bearer\s+(.+)$/i.test(header) ? header.replace(/^Bearer\s+/i, '').trim() : '';
+
+  // Per-company key is the primary path — every member of a company (invited
+  // or original) shares this one value, and a match tells us which company
+  // the lead belongs to, so callers never need to pass company_id by hand.
+  let companyId = null;
+  if (provided) {
+    const companyRow = await one('SELECT id FROM companies WHERE api_key=? AND is_active=1 LIMIT 1', [provided]);
+    if (companyRow) companyId = companyRow.id;
   }
+
+  if (companyId) {
+    req.companyId = companyId;
+  } else if (provided && config.apiToken && safeEquals(config.apiToken, provided)) {
+    // Legacy install-wide token, from before per-company keys existed. Still
+    // accepted so integrations already set up against it keep working, but it
+    // doesn't resolve a company on its own — rawData.company_id (passed
+    // through to processLead below) is the only way a lead ingested this way
+    // gets attached to one.
+  } else if (provided) {
+    return fail(res, 'Invalid API token.', 401);
+  } else if (config.env === 'production') {
+    return fail(res, 'Missing API token.', 401);
+  }
+  // else (dev, no token at all): allowed through unauthenticated for local testing.
+
   const sourceRow = await one('SELECT * FROM lead_sources WHERE slug=? LIMIT 1', [req.params.source]);
   if (!sourceRow) return fail(res, `Unknown source: ${req.params.source}`, 404);
   const raw = { ...req.body, ...req.query };
