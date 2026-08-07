@@ -52,6 +52,7 @@ export default function GeneralSettings() {
   const [apiKey, setApiKey] = useState('');
   const [apiKeyVisible, setApiKeyVisible] = useState(false);
   const [regenerating, setRegenerating] = useState(false);
+  const [deletingKey, setDeletingKey] = useState(false);
 
   useEffect(() => {
     api.get('/api/settings').then((d) => {
@@ -65,6 +66,20 @@ export default function GeneralSettings() {
   const copyApiKey = () => {
     navigator.clipboard.writeText(apiKey);
     toast('API key copied.', 'success');
+  };
+
+  const generateApiKey = async () => {
+    setRegenerating(true);
+    try {
+      const d = await api.post('/api/settings/api-key/regenerate');
+      setApiKey(d.api_key);
+      setApiKeyVisible(true);
+      toast('API key generated.', 'success');
+    } catch (err) {
+      toast(err.message, 'danger');
+    } finally {
+      setRegenerating(false);
+    }
   };
 
   const regenerateApiKey = async () => {
@@ -83,6 +98,25 @@ export default function GeneralSettings() {
       toast(err.message, 'danger');
     } finally {
       setRegenerating(false);
+    }
+  };
+
+  const deleteApiKey = async () => {
+    const yes = await confirm(
+      'Any integration using this key will start getting 401 errors immediately. You can generate a new one anytime.',
+      { title: 'Delete API key?', danger: true, confirmLabel: 'Delete' }
+    );
+    if (!yes) return;
+    setDeletingKey(true);
+    try {
+      await api.delete('/api/settings/api-key');
+      setApiKey('');
+      setApiKeyVisible(false);
+      toast('API key deleted.', 'success');
+    } catch (err) {
+      toast(err.message, 'danger');
+    } finally {
+      setDeletingKey(false);
     }
   };
 
@@ -137,27 +171,43 @@ export default function GeneralSettings() {
           <div className="row g-3">
             <div className="col-md-8">
               <label className="form-label">Your API Key</label>
-              <div className="d-flex align-items-center gap-2">
-                <input
-                  type={apiKeyVisible ? 'text' : 'password'}
-                  className="form-control font-monospace"
-                  value={apiKey}
-                  readOnly
-                  autoComplete="one-time-code"
-                  data-1p-ignore="true"
-                  data-lpignore="true"
-                />
-                <button type="button" className="btn btn-outline-secondary flex-shrink-0" title={apiKeyVisible ? 'Hide' : 'Show'} onClick={() => setApiKeyVisible((v) => !v)}>
-                  <i className={`bi bi-eye${apiKeyVisible ? '-slash' : ''}`} />
-                </button>
-                <button type="button" className="btn btn-outline-secondary flex-shrink-0" title="Copy" disabled={!apiKey} onClick={copyApiKey}>
-                  <i className="bi bi-clipboard" />
-                </button>
-                <button type="button" className="btn btn-outline-danger flex-shrink-0 text-nowrap" disabled={regenerating} onClick={regenerateApiKey}>
-                  {regenerating ? 'Regenerating…' : 'Regenerate'}
-                </button>
-              </div>
-              <div className="text-11 text-muted-3 mt-1">Regenerating immediately invalidates the old key — anything still using it will start getting 401 errors.</div>
+              {apiKey ? (
+                <>
+                  <div className="d-flex align-items-center gap-2">
+                    <input
+                      type={apiKeyVisible ? 'text' : 'password'}
+                      className="form-control font-monospace"
+                      value={apiKey}
+                      readOnly
+                      autoComplete="one-time-code"
+                      data-1p-ignore="true"
+                      data-lpignore="true"
+                    />
+                    <button type="button" className="btn btn-outline-secondary flex-shrink-0" title={apiKeyVisible ? 'Hide' : 'Show'} onClick={() => setApiKeyVisible((v) => !v)}>
+                      <i className={`bi bi-eye${apiKeyVisible ? '-slash' : ''}`} />
+                    </button>
+                    <button type="button" className="btn btn-outline-secondary flex-shrink-0" title="Copy" disabled={!apiKey} onClick={copyApiKey}>
+                      <i className="bi bi-clipboard" />
+                    </button>
+                    <button type="button" className="btn btn-outline-secondary flex-shrink-0 text-nowrap" disabled={regenerating || deletingKey} onClick={regenerateApiKey}>
+                      {regenerating ? 'Regenerating…' : 'Regenerate'}
+                    </button>
+                    <button type="button" className="btn btn-outline-danger flex-shrink-0 text-nowrap" disabled={regenerating || deletingKey} onClick={deleteApiKey}>
+                      {deletingKey ? 'Deleting…' : 'Delete'}
+                    </button>
+                  </div>
+                  <div className="text-11 text-muted-3 mt-1">Regenerating or deleting immediately invalidates this key — anything still using it will start getting 401 errors.</div>
+                </>
+              ) : (
+                <>
+                  <div>
+                    <button type="button" className="btn btn-brand" disabled={regenerating} onClick={generateApiKey}>
+                      {regenerating ? 'Generating…' : 'Generate API Key'}
+                    </button>
+                  </div>
+                  <div className="text-11 text-muted-3 mt-1">No key yet — nothing outside the CRM can push leads in until you generate one.</div>
+                </>
+              )}
             </div>
           </div>
 

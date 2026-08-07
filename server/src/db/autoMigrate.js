@@ -223,15 +223,22 @@ export async function runAutoMigrations() {
 
     // 010_company_api_key — one bearer key per company, authenticating
     // POST /ingest/:source. Every pre-existing company predates this column,
-    // so backfill each with its own unique key (can't be a single bulk
-    // UPDATE like the company_id backfills above, since api_key is UNIQUE).
+    // so backfill each with its own unique key the first time this column is
+    // added (can't be a single bulk UPDATE like the company_id backfills
+    // above, since api_key is UNIQUE). Gated on apiKeyColumnExisted so this
+    // runs exactly once, ever — after that, a NULL api_key is a deliberate
+    // "not generated yet" state (see createCompany()), not a gap to
+    // backfill again on every server restart.
+    const apiKeyColumnExisted = await columnExists('companies', 'api_key');
     await ensureColumn('companies', 'api_key', '`api_key` VARCHAR(80) DEFAULT NULL UNIQUE');
-    const companiesMissingKey = await q('SELECT id FROM companies WHERE api_key IS NULL');
-    for (const row of companiesMissingKey) {
-      await run('UPDATE companies SET api_key=? WHERE id=?', [generateApiKey(), row.id]);
-    }
-    if (companiesMissingKey.length) {
-      console.log(`[auto-migrate] generated api_key for ${companiesMissingKey.length} existing compan${companiesMissingKey.length === 1 ? 'y' : 'ies'}`);
+    if (!apiKeyColumnExisted) {
+      const companiesMissingKey = await q('SELECT id FROM companies WHERE api_key IS NULL');
+      for (const row of companiesMissingKey) {
+        await run('UPDATE companies SET api_key=? WHERE id=?', [generateApiKey(), row.id]);
+      }
+      if (companiesMissingKey.length) {
+        console.log(`[auto-migrate] generated api_key for ${companiesMissingKey.length} existing compan${companiesMissingKey.length === 1 ? 'y' : 'ies'}`);
+      }
     }
 
     console.log('[auto-migrate] schema check complete — up to date.');

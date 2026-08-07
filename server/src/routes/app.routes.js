@@ -164,6 +164,7 @@ router.get('/settings', adminOnly, asyncRoute(settings.getSettings));
 router.post('/settings', adminOnly, asyncRoute(settings.saveSettings));
 router.get('/settings/api-key', adminOnly, asyncRoute(settings.getApiKey));
 router.post('/settings/api-key/regenerate', adminOnly, asyncRoute(settings.regenerateApiKey));
+router.delete('/settings/api-key', adminOnly, asyncRoute(settings.deleteApiKey));
 router.get('/settings/users', adminOnly, asyncRoute(settings.getUsers));
 router.post('/settings/users', adminOnly, asyncRoute(settings.createUser));
 router.post('/settings/users/invite', adminOnly, asyncRoute(settings.inviteUser));

@@ -21,23 +21,25 @@ export async function getSettings(req, res) {
 }
 
 // One key per company, shared by every member (invited or original) of it —
-// authenticates POST /ingest/:source. Auto-generated on company creation
-// (createCompany()) and backfilled for pre-existing companies (autoMigrate.js),
-// so this lazy-generate is just a defensive fallback, not the normal path.
+// authenticates POST /ingest/:source. A new company starts with api_key=NULL
+// (createCompany()) — an admin must explicitly generate one from Settings,
+// so this deliberately does NOT lazy-generate on a bare GET.
 export async function getApiKey(req, res) {
-  let row = await one('SELECT api_key FROM companies WHERE id=? LIMIT 1', [req.companyId]);
-  let apiKey = row?.api_key;
-  if (!apiKey) {
-    apiKey = generateApiKey();
-    await run('UPDATE companies SET api_key=? WHERE id=?', [apiKey, req.companyId]);
-  }
-  ok(res, { api_key: apiKey });
+  const row = await one('SELECT api_key FROM companies WHERE id=? LIMIT 1', [req.companyId]);
+  ok(res, { api_key: row?.api_key || null });
 }
 
+// Same DB operation whether a key already exists (a "regenerate") or not (a
+// first-time "generate") — the client just labels the button differently.
 export async function regenerateApiKey(req, res) {
   const apiKey = generateApiKey();
   await run('UPDATE companies SET api_key=? WHERE id=?', [apiKey, req.companyId]);
-  ok(res, { api_key: apiKey }, 'API key regenerated — update any integrations still using the old one.');
+  ok(res, { api_key: apiKey }, 'API key generated — update any integrations that need it.');
+}
+
+export async function deleteApiKey(req, res) {
+  await run('UPDATE companies SET api_key=NULL WHERE id=?', [req.companyId]);
+  ok(res, { api_key: null }, 'API key deleted — anything still using it will start getting 401s until you generate a new one.');
 }
 
 export async function saveSettings(req, res) {

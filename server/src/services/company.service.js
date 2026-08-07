@@ -1,5 +1,4 @@
 import { one, q, run } from '../db/pool.js';
-import { generateApiKey } from '../utils/helpers.js';
 
 export function slugifyCompanyName(name) {
   return String(name || '')
@@ -40,9 +39,12 @@ export async function createCompany({ name, timezone, currency, userId }) {
   let slug = baseSlug;
   let suffix = 2;
   while (await one('SELECT id FROM companies WHERE slug=? LIMIT 1', [slug])) slug = `${baseSlug}-${suffix++}`;
+  // api_key starts NULL — an admin has to explicitly generate one from
+  // Settings (see settings.controller.js getApiKey/regenerateApiKey) rather
+  // than every new company silently getting a live, unused Bearer credential.
   const result = await run(
     'INSERT INTO companies (name,slug,timezone,currency,created_by,api_key) VALUES (?,?,?,?,?,?)',
-    [name, slug, timezone || null, currency || null, userId, generateApiKey()]
+    [name, slug, timezone || null, currency || null, userId, null]
   );
   await run('INSERT INTO company_users (company_id,user_id,role) VALUES (?,?,?)', [result.insertId, userId, 'admin']);
   return one('SELECT * FROM companies WHERE id=? LIMIT 1', [result.insertId]);
