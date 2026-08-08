@@ -44,10 +44,13 @@ export function jsonOrNull(value) {
   return JSON.stringify(value);
 }
 
+// req is a real Express request for live HTTP paths, but background/cron sync jobs
+// (Google Sheets, LinkedIn, Salesforce pollers) pass a plain { companyId } stub with
+// no .headers/.socket — fall back to '0.0.0.0' for those instead of throwing.
 export function ipAddress(req) {
-  const forwarded = req.headers['x-forwarded-for'];
+  const forwarded = req.headers?.['x-forwarded-for'];
   const raw = Array.isArray(forwarded) ? forwarded[0] : forwarded;
-  return String(raw || req.socket.remoteAddress || '0.0.0.0').split(',')[0].trim();
+  return String(raw || req.socket?.remoteAddress || '0.0.0.0').split(',')[0].trim();
 }
 
 export function csvEscape(value) {
