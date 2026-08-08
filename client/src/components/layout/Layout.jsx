@@ -199,23 +199,25 @@ function NotificationBell() {
 
   const load = useCallback(() => {
     api.get('/api/notifications').then((res) => {
+      // Google Sheets auto-sync results are a "just tell me, don't make me open
+      // the bell" event — toast-only, kept out of the bell badge/dropdown/ding
+      // entirely so a routine 1-min background sync never looks like a real alert.
+      const bellItems = res.items.filter((item) => item.type !== 'google_sheets_sync');
+      const bellUnread = bellItems.filter((item) => !item.is_read).length;
+
       // First load after mount just establishes the baseline — don't ding for
       // notifications that were already sitting there before this tab opened.
-      if (prevUnreadRef.current !== null && res.unread > prevUnreadRef.current) {
+      if (prevUnreadRef.current !== null && bellUnread > prevUnreadRef.current) {
         playNotificationSound();
       }
-      // Google Sheets auto-sync results are a "just tell me, don't make me open
-      // the bell" event — surface them as a simple bottom-right toast instead of
-      // (or in addition to, since there's no separate push channel for this)
-      // sitting quietly in the notifications dropdown.
       if (seenIdsRef.current) {
         res.items
           .filter((item) => item.type === 'google_sheets_sync' && !seenIdsRef.current.has(item.id))
           .forEach((item) => toast(item.title, 'info'));
       }
       seenIdsRef.current = new Set(res.items.map((item) => item.id));
-      prevUnreadRef.current = res.unread;
-      setData(res);
+      prevUnreadRef.current = bellUnread;
+      setData({ ...res, unread: bellUnread, items: bellItems });
     }).catch(() => {});
   }, [toast]);
 
